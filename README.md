@@ -1,34 +1,96 @@
-# Nexa Platform
+<!-- Improved compatibility of back to top link: See: https://github.com/pull/73 -->
 
-A comprehensive platform connecting brands with creators for campaign management, featuring real-time chat, payment processing, and administrative tools.
+<a name="readme-top"></a>
 
-## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-  - [Backend Setup](#backend-setup)
-  - [Frontend Setup](#frontend-setup)
-  - [Socket Server Setup](#socket-server-setup)
-- [Configuration](#configuration)
-- [Database Setup](#database-setup)
-- [Running the Application](#running-the-application)
-- [Additional Services](#additional-services)
-- [Development](#development)
-- [Testing](#testing)
-- [Troubleshooting](#troubleshooting)
 
-## 🎯 Overview
+<!-- PROJECT LOGO -->
 
-Nexa is a full-stack platform built with:
-- **Backend**: Laravel 10 (PHP 8.1+)
-- **Frontend**: React 18 with TypeScript, Vite, and Tailwind CSS
-- **Real-time**: Socket.IO for chat functionality
-- **Payment**: Stripe integration
-- **Email**: AWS SES
+<br />
 
-## 🏗️ Architecture
+<div align="center">
+  <a href="https://github.com/Stars1104">
+    <img src="./Nexa-Frontend/public/Nexa.png" alt="Nexa Logo" width="1000">
+  </a>
+
+  <h3 align="center">Nexa</h3>
+
+  <p align="center">
+    A comprehensive platform connecting brands with creators for campaign management, featuring real-time chat, payment processing, and administrative tools.
+    <br />
+    <a href="https://github.com/Stars1104"><strong>Explore the docs »</strong></a>
+    <br />
+    <br />
+    <a href="https://nexacreators.com.br">View Demo</a>
+    ·
+    <a href="https://github.com/Stars1104/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/Stars1104/issues">Request Feature</a>
+  </p>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#configuration">Configuration</a></li>
+        <li><a href="#database-setup">Database Setup</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#running-the-application">Running The Application</a></li>
+    <li><a href="#development">Development</a></li>
+    <li><a href="#testing">Testing</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+</details>
+
+<!-- ABOUT THE PROJECT -->
+
+## About The Project
+
+Nexa is a full-stack platform that revolutionizes the way brands connect with creators. It provides a comprehensive solution for campaign management, real-time communication, payment processing, and administrative oversight.
+
+Here's why Nexa stands out:
+
+* **Complete Campaign Management**: From creation to completion, manage every aspect of your campaigns
+* **Real-time Communication**: Built-in chat system with Socket.IO for instant messaging
+* **Secure Payment Processing**: Integrated Stripe payment system for seamless transactions
+* **Multi-role Support**: Separate interfaces for Creators, Brands, Admins, and Students
+* **Comprehensive Admin Tools**: Full control over users, campaigns, and platform analytics
+* **Student Verification**: Special system for student creators with trial periods
+
+Nexa simplifies the collaboration process between brands and creators, making it easier than ever to find the right match and manage successful campaigns.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Built With
+
+This section lists the major frameworks and libraries used to build the Nexa platform.
+
+[![Laravel][Laravel.com]][Laravel-url] [![React][React.js]][React-url] [![TypeScript][TypeScript]][TypeScript-url] [![Vite][Vite]][Vite-url] [![TailwindCSS][TailwindCSS]][TailwindCSS-url] [![Redux][Redux]][Redux-url] [![Socket.IO][Socket.IO]][Socket.IO-url] [![Stripe][Stripe]][Stripe-url]
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Architecture
 
 ```
 Serve/
@@ -47,90 +109,71 @@ Serve/
     └── public/            # Static assets
 ```
 
-## 📦 Prerequisites
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Required Software
+<!-- GETTING STARTED -->
 
-- **PHP** >= 8.1 with extensions:
-  - BCMath
-  - Ctype
-  - Fileinfo
-  - JSON
-  - Mbstring
-  - OpenSSL
-  - PDO
-  - Tokenizer
-  - XML
-- **Composer** >= 2.0
-- **Node.js** >= 18.x and npm >= 9.x
-- **MySQL** >= 8.0 or **PostgreSQL** >= 13
-- **Redis** (for caching and queues)
+## Getting Started
 
-### Optional Software
+This section will guide you through setting up the Nexa platform locally on your machine.
 
-- **PM2** (for process management)
+### Prerequisites
 
-## 🚀 Installation
+Before you begin, ensure you have the following software installed:
 
-### Backend Setup
+* **PHP** >= 8.1 with extensions:
+  - BCMath, Ctype, Fileinfo, JSON, Mbstring, OpenSSL, PDO, Tokenizer, XML
+* **Composer** >= 2.0
+  ```sh
+  composer --version
+  ```
+* **Node.js** >= 18.x and npm >= 9.x
+  ```sh
+  node --version
+  npm --version
+  ```
+* **MySQL** >= 8.0 or **PostgreSQL** >= 13
+* **Redis** (for caching and queues)
 
-1. **Navigate to the backend directory:**
-   ```bash
+### Installation
+
+Follow these steps to install and set up the Nexa platform:
+
+1. **Clone the repository**
+   ```sh
+   git clone https://github.com/your_username/nexa-platform.git
+   cd nexa-platform
+   ```
+
+2. **Backend Setup**
+   ```sh
    cd Nexa-Backend
-   ```
-
-2. **Install PHP dependencies:**
-   ```bash
    composer install
-   ```
-
-3. **Copy environment file:**
-   ```bash
    cp .env.example .env
-   ```
-
-4. **Generate application key:**
-   ```bash
    php artisan key:generate
-   ```
-
-5. **Create storage link:**
-   ```bash
    php artisan storage:link
-   ```
-
-6. **Set up storage directories:**
-   ```bash
    php artisan storage:setup-directories
    ```
 
-### Frontend Setup
-
-1. **Navigate to the frontend directory:**
-   ```bash
-   cd Nexa-Frontend
-   ```
-
-2. **Install Node.js dependencies:**
-   ```bash
+3. **Frontend Setup**
+   ```sh
+   cd ../Nexa-Frontend
    npm install
    ```
 
-### Socket Server Setup
-
-1. **Navigate to the backend directory:**
-   ```bash
-   cd Nexa-Backend
-   ```
-
-2. **Install Socket.IO dependencies:**
-   ```bash
+4. **Socket Server Setup**
+   ```sh
+   cd ../Nexa-Backend
    npm install
    ```
 
-## ⚙️ Configuration
+5. **Configure Environment Variables** (see Configuration section below)
 
-### Backend Environment Variables
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Configuration
+
+#### Backend Environment Variables
 
 Edit `Nexa-Backend/.env` with the following variables:
 
@@ -172,12 +215,6 @@ STRIPE_SECRET=sk_test_your_stripe_secret_key
 STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
 STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
 
-# Pusher (for broadcasting - optional)
-PUSHER_APP_ID=
-PUSHER_APP_KEY=
-PUSHER_APP_SECRET=
-PUSHER_APP_CLUSTER=mt1
-
 # Session & Cache
 SESSION_DRIVER=redis
 CACHE_DRIVER=redis
@@ -188,7 +225,7 @@ SANCTUM_STATEFUL_DOMAINS=localhost:5173,localhost:3000
 SESSION_DOMAIN=localhost
 ```
 
-### Frontend Environment Variables
+#### Frontend Environment Variables
 
 Create `Nexa-Frontend/.env`:
 
@@ -203,7 +240,9 @@ VITE_SOCKET_URL=http://localhost:3001
 VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
 ```
 
-## 🗄️ Database Setup
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Database Setup
 
 1. **Create the database:**
    ```sql
@@ -211,38 +250,77 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
    ```
 
 2. **Run migrations:**
-   ```bash
+   ```sh
    cd Nexa-Backend
    php artisan migrate
    ```
 
 3. **Seed the database (optional):**
-   ```bash
+   ```sh
    php artisan db:seed
    ```
 
-## ▶️ Running the Application
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- USAGE EXAMPLES -->
+
+## Usage
+
+Nexa provides different interfaces based on user roles:
+
+### For Creators
+- Browse and apply to campaigns
+- Manage portfolio and showcase work
+- Chat with brands in real-time
+- Track earnings and request withdrawals
+- Manage subscription and payment methods
+
+### For Brands
+- Create and manage campaigns
+- Search and connect with creators
+- Real-time chat with creators
+- Manage contracts and payments
+- Track campaign performance
+
+### For Admins
+- Dashboard with platform metrics
+- User management (Creators, Brands, Students)
+- Campaign approval and moderation
+- Guide management
+- Brand rankings and analytics
+- Withdrawal verification
+
+### For Students
+- Student verification system
+- Limited creator features
+- Trial period management
+
+_For more detailed documentation, please refer to the [Documentation](https://github.com/your_username/nexa-platform/wiki)_
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- RUNNING THE APPLICATION -->
+
+## Running The Application
 
 ### Development Mode
 
 1. **Start the Laravel backend:**
-   ```bash
+   ```sh
    cd Nexa-Backend
    php artisan serve
    ```
    Backend will be available at `http://localhost:8000`
 
 2. **Start the Socket.IO server:**
-   ```bash
+   ```sh
    cd Nexa-Backend
-   npm run start
-   # or for development with auto-reload:
    npm run dev
    ```
    Socket server will run on `http://localhost:3001`
 
 3. **Start the React frontend:**
-   ```bash
+   ```sh
    cd Nexa-Frontend
    npm run dev
    ```
@@ -251,13 +329,13 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
 ### Production Mode
 
 1. **Build the frontend:**
-   ```bash
+   ```sh
    cd Nexa-Frontend
    npm run build
    ```
 
 2. **Optimize Laravel:**
-   ```bash
+   ```sh
    cd Nexa-Backend
    php artisan config:cache
    php artisan route:cache
@@ -265,53 +343,18 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
    ```
 
 3. **Set up process manager (PM2) for Socket.IO:**
-   ```bash
+   ```sh
    cd Nexa-Backend
    pm2 start socket-server.js --name nexa-socket
    pm2 save
    pm2 startup
    ```
 
-## 🔧 Additional Services
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Stripe Configuration
+<!-- DEVELOPMENT -->
 
-1. Create a Stripe account at [stripe.com](https://stripe.com)
-2. Get your API keys from the Stripe Dashboard
-3. Add keys to `.env` file
-4. Set up webhook endpoint: `https://yourdomain.com/api/stripe/webhook`
-
-
-### AWS Configuration
-
-1. Create an AWS account
-2. Set up IAM user with permissions for:
-   - SES (for email sending)
-3. Generate access keys
-4. Add credentials to `.env`
-5. Verify SES email addresses/domains
-
-### Redis Setup
-
-1. **Install Redis:**
-   ```bash
-   # Ubuntu/Debian
-   sudo apt-get install redis-server
-   
-   # macOS
-   brew install redis
-   ```
-
-2. **Start Redis:**
-   ```bash
-   # Ubuntu/Debian
-   sudo systemctl start redis
-   
-   # macOS
-   brew services start redis
-   ```
-
-## 💻 Development
+## Development
 
 ### Backend Commands
 
@@ -356,7 +399,11 @@ npm run lint
 npm test
 ```
 
-## 🧪 Testing
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- TESTING -->
+
+## Testing
 
 ### Backend Tests
 
@@ -372,7 +419,11 @@ cd Nexa-Frontend
 npm test
 ```
 
-## 🐛 Troubleshooting
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- TROUBLESHOOTING -->
+
+## Troubleshooting
 
 ### Common Issues
 
@@ -414,56 +465,110 @@ npm test
 - **Socket.IO logs:** Check console output or PM2 logs
 - **Frontend errors:** Check browser console
 
-## 📚 Project Structure
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Backend Key Directories
+<!-- ROADMAP -->
 
-- `app/Http/Controllers/` - API controllers
-- `app/Models/` - Eloquent models
-- `app/Http/Middleware/` - Custom middleware
-- `database/migrations/` - Database migrations
-- `routes/api.php` - API routes
-- `config/` - Configuration files
+## Roadmap
 
-### Frontend Key Directories
+- [x] User authentication and authorization
+- [x] Campaign management system
+- [x] Real-time chat functionality
+- [x] Payment processing integration
+- [x] Admin dashboard
+- [x] Student verification system
 
-- `src/api/` - API client functions
-- `src/components/` - Reusable components
-- `src/pages/` - Page components
-- `src/store/` - Redux store and slices
-- `src/hooks/` - Custom React hooks
-- `src/utils/` - Utility functions
+See the [open issues](https://github.com/Stars1104/issues) for a full list of proposed features (and known issues).
 
-## 🔐 Security
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-- Never commit `.env` files
-- Use strong database passwords
-- Keep dependencies updated
-- Enable HTTPS in production
-- Configure CORS properly
-- Use environment-specific configurations
+<!-- CONTRIBUTING -->
 
-## 📝 License
+## Contributing
 
-This project is licensed under the MIT License.
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
-## 🤝 Contributing
+If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+Don't forget to give the project a star! Thanks again!
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 📞 Support
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-For issues and questions, please open an issue on the repository.
+<!-- LICENSE -->
 
----
+## License
 
-**Note:** This is a development setup guide. For production deployment, ensure you:
-- Set `APP_DEBUG=false`
-- Configure proper database backups
-- Set up monitoring and logging
-- Use HTTPS
-- Configure proper firewall rules
+Distributed under the MIT License. See `LICENSE.txt` for more information.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- CONTACT -->
+
+## Contact
+
+Nexa Team - [@nexacreators](https://twitter.com/nexacreators) - support@nexacreators.com.br
+
+Project Link: [https://https://github.com/Stars1104](https://github.com/Stars1104/)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- ACKNOWLEDGMENTS -->
+
+## Acknowledgments
+
+Use this space to list resources you find helpful and would like to give credit to. I've included a few of my favorites to kick things off!
+
+* [Laravel Documentation](https://laravel.com/docs)
+* [React Documentation](https://react.dev)
+* [Tailwind CSS](https://tailwindcss.com)
+* [shadcn/ui](https://ui.shadcn.com)
+* [Stripe Documentation](https://stripe.com/docs)
+* [Socket.IO Documentation](https://socket.io/docs)
+* [Choose an Open Source License](https://choosealicense.com)
+* [GitHub Emoji Cheat Sheet](https://www.webpagefx.com/tools/emoji-cheat-sheet)
+* [Img Shields](https://shields.io)
+* [GitHub Pages](https://pages.github.com)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+
+[contributors-shield]: https://img.shields.io/github/contributors/your_username/nexa-platform.svg?style=for-the-badge
+[contributors-url]: https://github.com/your_username/nexa-platform/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/your_username/nexa-platform.svg?style=for-the-badge
+[forks-url]: https://github.com/your_username/nexa-platform/network/members
+[stars-shield]: https://img.shields.io/github/stars/your_username/nexa-platform.svg?style=for-the-badge
+[stars-url]: https://github.com/your_username/nexa-platform/stargazers
+[issues-shield]: https://img.shields.io/github/issues/your_username/nexa-platform.svg?style=for-the-badge
+[issues-url]: https://github.com/your_username/nexa-platform/issues
+[license-shield]: https://img.shields.io/github/license/your_username/nexa-platform.svg?style=for-the-badge
+[license-url]: https://github.com/your_username/nexa-platform/blob/master/LICENSE.txt
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
+[linkedin-url]: https://linkedin.com/in/nexa-platform
+
+[Laravel.com]: https://img.shields.io/badge/Laravel-FF2D20?style=for-the-badge&logo=laravel&logoColor=white
+[Laravel-url]: https://laravel.com
+[React.js]: https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB
+[React-url]: https://reactjs.org/
+[TypeScript]: https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white
+[TypeScript-url]: https://www.typescriptlang.org/
+[Vite]: https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white
+[Vite-url]: https://vitejs.dev/
+[TailwindCSS]: https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white
+[TailwindCSS-url]: https://tailwindcss.com/
+[Redux]: https://img.shields.io/badge/Redux-593D88?style=for-the-badge&logo=redux&logoColor=white
+[Redux-url]: https://redux.js.org/
+[Socket.IO]: https://img.shields.io/badge/Socket.io-010101?style=for-the-badge&logo=socket.io&logoColor=white
+[Socket.IO-url]: https://socket.io/
+[Stripe]: https://img.shields.io/badge/Stripe-626CD9?style=for-the-badge&logo=Stripe&logoColor=white
+[Stripe-url]: https://stripe.com/
+[MySQL]: https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white
+[MySQL-url]: https://www.mysql.com/
+[Redis]: https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white
+[Redis-url]: https://redis.io/
