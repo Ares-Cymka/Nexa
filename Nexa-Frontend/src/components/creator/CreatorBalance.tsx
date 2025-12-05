@@ -1,0 +1,541 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/hooks/use-toast';
+import { hiringApi, CreatorBalance as CreatorBalanceType, Withdrawal, WithdrawalMethod } from '@/api/hiring';
+import { 
+  DollarSign, 
+  TrendingUp, 
+  Clock, 
+  CheckCircle, 
+  AlertCircle,
+  Download
+} from 'lucide-react';
+import { translateWithdrawalStatus, translateTransactionStatus } from '@/utils/translationUtils';
+import { useAppSelector } from '@/store/hooks';
+
+export default function CreatorBalance() {
+  const [balance, setBalance] = useState<CreatorBalanceType | null>(null);
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [withdrawalMethods, setWithdrawalMethods] = useState<WithdrawalMethod[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const { user, profile } = useAppSelector((state) => state.auth);
+  const userData = profile || user;
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [balanceRes, withdrawalsRes, methodsRes] = await Promise.all([
+        hiringApi.getCreatorBalance(),
+        hiringApi.getWithdrawals(),
+        hiringApi.getWithdrawalMethods(),
+      ]);
+
+      setBalance(balanceRes.data);
+      setWithdrawals(withdrawalsRes.data.data);
+      
+      
+      const methods = methodsRes.data || [];
+      const uniqueMethods = methods.reduce((acc: WithdrawalMethod[], method: WithdrawalMethod) => {
+        const existingIndex = acc.findIndex((m) => m.id === method.id);
+       
+          acc.push(method);
+        
+        return acc;
+      }, []);
+      
+      setWithdrawalMethods(uniqueMethods);
+    } catch (error) {
+      console.error('Error loading balance data:', error);
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar dados do saldo",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!balance) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-center text-gray-500">Nenhum dado de saldo disponível</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Saldo Disponível</CardTitle>
+            <DollarSign className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {balance.balance.formatted_available_balance}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Disponível para saque
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Saldo Pendente</CardTitle>
+            <Clock className="h-4 w-4 text-yellow-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">
+              {balance.balance.formatted_pending_balance}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Aguardando processamento
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Ganho</CardTitle>
+            <TrendingUp className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              {balance.balance.formatted_total_earned}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Desde o início
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Sacado</CardTitle>
+            <Download className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600">
+              {balance.balance.formatted_total_withdrawn}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Saques realizados
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+
+
+      {}
+      {balance.withdrawals.pending_count > 0 && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
+              <div>
+                <p className="font-medium text-yellow-800">
+                  {balance.withdrawals.pending_count} saque(s) pendente(s)
+                </p>
+                <p className="text-sm text-yellow-700">
+                  Total: {balance.withdrawals.formatted_pending_amount}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {}
+      <Tabs defaultValue="transactions" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="transactions">Transações Recentes</TabsTrigger>
+          <TabsTrigger value="withdrawals">Saques</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="transactions" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Transações Recentes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {balance.recent_transactions.length > 0 ? (
+                <div className="space-y-3">
+                  {balance.recent_transactions.map((transaction) => (
+                    <div key={transaction.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div>
+                        <p className="font-medium">{transaction.contract_title}</p>
+                        <p className="text-sm text-gray-600">
+                          {transaction.processed_at && formatDate(transaction.processed_at)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-green-600">{transaction.amount}</p>
+                        <Badge variant="outline" className="text-xs">
+                          {translateTransactionStatus(transaction.status)}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">
+                  Nenhuma transação recente
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="withdrawals" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Histórico de Saques</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {withdrawals.length > 0 ? (
+                <div className="space-y-3">
+                  {withdrawals.map((withdrawal) => (
+                    <div key={withdrawal.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div>
+                        <p className="font-medium">{withdrawal.amount}</p>
+                        <p className="text-sm text-gray-600">
+                          {withdrawal.method} • {formatDate(withdrawal.created_at)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <Badge className={withdrawal.status_badge_color}>
+                          {translateWithdrawalStatus(withdrawal.status)}
+                        </Badge>
+                        {withdrawal.can_be_cancelled && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => handleCancelWithdrawal(withdrawal.id)}
+                          >
+                            Cancelar
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">
+                  Nenhum saque realizado
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+      </Tabs>
+    </div>
+  );
+}
+
+
+interface WithdrawalFormProps {
+  availableBalance: number;
+  withdrawalMethods: WithdrawalMethod[];
+  onSuccess: () => void;
+}
+
+function WithdrawalForm({ availableBalance, withdrawalMethods, onSuccess }: WithdrawalFormProps) {
+  const [selectedMethod, setSelectedMethod] = useState<string>('');
+  const [amount, setAmount] = useState<string>('');
+  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  
+  const safeAvailableBalance = Number(availableBalance) || 0;
+  const selectedMethodData = withdrawalMethods.find(m => m.id === selectedMethod);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!selectedMethod || !amount || parseFloat(amount) <= 0) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (parseFloat(amount) > safeAvailableBalance) {
+      toast({
+        title: "Erro",
+        description: "Valor excede o saldo disponível",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (selectedMethodData) {
+      if (parseFloat(amount) < selectedMethodData.min_amount) {
+        toast({
+          title: "Erro",
+          description: `Valor mínimo para ${selectedMethodData.name} é R$ ${selectedMethodData.min_amount.toFixed(2)}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (parseFloat(amount) > selectedMethodData.max_amount) {
+        toast({
+          title: "Erro",
+          description: `Valor máximo para ${selectedMethodData.name} é R$ ${selectedMethodData.max_amount.toFixed(2)}`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await hiringApi.createWithdrawal({
+        amount: parseFloat(amount),
+        withdrawal_method: selectedMethod,
+        withdrawal_details: formData,
+      });
+
+      const withdrawalData = response.data?.data;
+      const netAmount = selectedMethodData 
+        ? parseFloat(amount) - (parseFloat(amount) * (selectedMethodData.fee / 100)) - 5.00
+        : parseFloat(amount) - 5.00;
+      const totalFees = selectedMethodData
+        ? (parseFloat(amount) * (selectedMethodData.fee / 100)) + 5.00
+        : 5.00;
+      const processingTime = selectedMethodData?.processing_time || "1-3 dias úteis";
+      const formattedAmount = `R$ ${parseFloat(amount).toFixed(2).replace('.', ',')}`;
+      const formattedNetAmount = `R$ ${netAmount.toFixed(2).replace('.', ',')}`;
+      const formattedFees = `R$ ${totalFees.toFixed(2).replace('.', ',')}`;
+
+      
+      toast({
+        title: "✅ Saque Solicitado com Sucesso!",
+        description: `${formattedAmount} via ${selectedMethodData?.name || withdrawalData?.method || 'método selecionado'}\n\n` +
+          `💰 Valor líquido: ${formattedNetAmount}\n` +
+          `💳 Taxas: ${formattedFees} • ⏱️ Processamento: ${processingTime}\n\n` +
+          `📊 Você pode acompanhar o status do saque na aba "Saques"`,
+        duration: 7000,
+      });
+
+      onSuccess();
+    } catch (error: any) {
+      console.error('Error creating withdrawal:', error);
+      
+      
+      const errorMessage = error.response?.data?.message || 'Erro ao solicitar saque';
+      let helpfulMessage = errorMessage;
+      
+      if (errorMessage.includes("Saldo insuficiente")) {
+        helpfulMessage = "Seu saldo disponível não é suficiente para este saque. Verifique seu saldo e tente novamente.";
+      } else if (errorMessage.includes("muitos saques pendentes")) {
+        helpfulMessage = "Você tem muitos saques pendentes. Aguarde o processamento dos saques atuais antes de solicitar um novo.";
+      } else if (errorMessage.includes("Valor deve estar entre")) {
+        helpfulMessage = errorMessage;
+      }
+      
+      toast({
+        title: "❌ Erro ao Solicitar Saque",
+        description: `${helpfulMessage}\n\n` +
+          `💡 Se o problema persistir, entre em contato com o suporte.`,
+        variant: "destructive",
+        duration: 6000,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getFormFields = () => {
+    if (!selectedMethodData) return [];
+
+    
+    if (selectedMethodData.field_config) {
+      return Object.entries(selectedMethodData.field_config).map(([fieldName, config]) => ({
+        name: fieldName,
+        label: config.label,
+        required: config.required,
+        type: config.type || 'text',
+        options: config.options,
+      }));
+    }
+
+    
+    switch (selectedMethod) {
+      case 'pagarme_bank_transfer':
+        return []; 
+      case 'bank_transfer':
+        return [
+          { name: 'bank', label: 'Banco', required: true },
+          { name: 'agency', label: 'Agência', required: true },
+          { name: 'account', label: 'Conta', required: true },
+          { name: 'account_type', label: 'Tipo de Conta', required: true, type: 'select', options: [
+            { value: 'checking', label: 'Conta Corrente' },
+            { value: 'savings', label: 'Conta Poupança' },
+          ]},
+          { name: 'holder_name', label: 'Nome do Titular', required: true },
+        ];
+      case 'pix':
+        return [
+          { name: 'pix_key', label: 'Chave PIX', required: true },
+          { name: 'pix_key_type', label: 'Tipo de Chave', required: true, type: 'select', options: [
+            { value: 'cpf', label: 'CPF' },
+            { value: 'cnpj', label: 'CNPJ' },
+            { value: 'email', label: 'E-mail' },
+            { value: 'phone', label: 'Telefone' },
+            { value: 'random', label: 'Chave Aleatória' },
+          ]},
+          { name: 'holder_name', label: 'Nome do Titular', required: true },
+        ];
+      case 'pagarme_account':
+        return [
+          { name: 'holder_name', label: 'Nome do Titular', required: true },
+        ];
+      default:
+        return [];
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Método de Saque</label>
+        <select
+          value={selectedMethod}
+          onChange={(e) => setSelectedMethod(e.target.value)}
+          className="w-full p-2 border rounded-md text-black outline-none"
+          required
+        >
+          <option value="">Selecione um método</option>
+          {withdrawalMethods.map((method) => (
+            <option key={method.id} value={method.id}>
+              {method.name} - Taxa: R$ {method.fee.toFixed(2)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-2">Valor (R$)</label>
+        <input
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          min={selectedMethodData?.min_amount || 0}
+          max={Math.min(safeAvailableBalance, selectedMethodData?.max_amount || safeAvailableBalance)}
+          step="0.01"
+          className="w-full p-2 border rounded-md text-black outline-none"
+          placeholder="0,00"
+          required
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Saldo disponível: R$ {safeAvailableBalance.toFixed(2)}
+        </p>
+      </div>
+
+      {selectedMethod && (
+        <div className="space-y-3">
+          <h4 className="font-medium">Dados para Saque</h4>
+          {selectedMethod === 'pagarme_bank_transfer' ? (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">✓</span>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-blue-800">
+                    Conta Bancária Registrada
+                  </h4>
+                  <p className="text-sm text-blue-700 mt-1">
+                    O saque será processado para sua conta bancária registrada via Pagar.me. 
+                    Não são necessárias informações adicionais.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            getFormFields().map((field) => (
+              <div key={field.name}>
+                <label className="block text-sm font-medium mb-1">
+                  {field.label} {field.required && '*'}
+                </label>
+                {field.type === 'select' ? (
+                  <select
+                    value={formData[field.name] || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, [field.name]: e.target.value }))}
+                    className="w-full p-2 border rounded-md"
+                    required={field.required}
+                  >
+                    <option value="">Selecione...</option>
+                    {field.options?.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={formData[field.name] || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, [field.name]: e.target.value }))}
+                    className="w-full p-2 border rounded-md"
+                    required={field.required}
+                  />
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      <div className="flex gap-3 pt-4">
+        <Button type="submit" disabled={isSubmitting} className="flex-1">
+          {isSubmitting ? 'Processando...' : 'Solicitar Saque'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+async function handleCancelWithdrawal(withdrawalId: number) {
+  
+} 

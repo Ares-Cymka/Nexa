@@ -1,0 +1,99 @@
+import { Button } from "../../components/ui/button";
+import LightLogo from "../../assets/light-logo.png";
+import DarkLogo from "../../assets/dark-logo.png";
+import { ArrowRight, Home, User } from "lucide-react";
+import { useTheme } from "../../components/ThemeProvider";
+import { ThemeToggle } from "../../components/ThemeToggle";
+import { useSystemTheme } from "../../hooks/use-system-theme";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
+
+const AuthStep = () => {
+    const { theme } = useTheme();
+    const systemTheme = useSystemTheme();
+    const isDarkMode = theme === "dark" || (theme === "system" && systemTheme);
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const handleInfluencer = () => {
+        
+        navigate("/signup/creator", { 
+            state: location.state || {} 
+        });
+    };
+
+    const handleCompany = () => {
+        
+        navigate("/signup/brand", { 
+            state: location.state || {} 
+        });
+    };
+
+    const canonical = typeof window !== "undefined" ? window.location.href : "";
+    const structuredData = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+    };
+
+    return (
+
+        <>
+            <Helmet>
+                <title>Nexa - Auth</title>
+                <meta name="description" content="Browse Nexa guides filtered by brand and creator. Watch embedded videos and manage guides." />
+                {canonical && <link rel="canonical" href={canonical} />}
+                <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
+            </Helmet>
+            <div className="min-h-screen flex items-center justify-center bg-muted dark:bg-[#171717] transition-colors duration-300">
+                <div className="bg-background rounded-2xl shadow-lg p-8 md:p-10 w-full max-w-lg flex flex-col items-center gap-6 border border-border">
+                    <div className="flex flex-col items-center gap-2">
+                        <img
+                            src={isDarkMode ? LightLogo : DarkLogo}
+                            alt="Nexa logo"
+                            className="w-28 mb-2 cursor-pointer"
+                            onClick={() => navigate("/")}
+                        />
+                        <h1 className="text-2xl md:text-3xl font-bold text-center text-foreground mb-1">
+                            Como você quer entrar?
+                        </h1>
+                        <p className="text-muted-foreground text-center text-base mb-2">
+                            Escolha o tipo de conta para acessar a plataforma
+                        </p>
+                    </div>
+                    <div className="flex flex-col gap-3 w-full">
+                        <Button
+                            variant="outline"
+                            className="w-full flex justify-between items-center py-6 px-4 text-lg font-semibold"
+                            onClick={handleCompany}
+                        >
+                            <span className="flex items-center gap-2">
+                                <Home className="w-6 h-6" /> Sou uma empresa
+                            </span>
+                            <span>
+                                <ArrowRight className="w-6 h-6" />
+                            </span>
+                        </Button>
+                        <Button
+                            variant="outline"
+                            className="w-full flex justify-between items-center py-6 px-4 text-lg font-semibold"
+                            onClick={handleInfluencer}
+                        >
+                            <span className="flex items-center gap-2">
+                                <User className="w-6 h-6" /> Sou um influenciador
+                            </span>
+                            <span>
+                                <ArrowRight className="w-6 h-6" />
+                            </span>
+                        </Button>
+                    </div>
+                    {}
+                    <div className="absolute top-4 right-4">
+                        <ThemeToggle />
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+};
+
+export default AuthStep;

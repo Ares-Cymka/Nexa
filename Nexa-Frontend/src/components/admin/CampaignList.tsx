@@ -1,0 +1,472 @@
+import React, { useState, useEffect } from "react";
+import { useAppDispatch, useAppSelector } from "../../store/hooks";
+import { fetchCampaigns, approveCampaign, rejectCampaign, toggleFeaturedCampaign, updateCampaign, deleteCampaign } from "../../store/thunks/campaignThunks";
+import { clearError } from "../../store/slices/campaignSlice";
+import CampaignDetail from "./CampaignDetail";
+import { Campaign } from "../../store/slices/campaignSlice";
+import { toast } from "../ui/sonner";
+import { Star, Edit, Trash2, Eye } from "lucide-react";
+import { Helmet } from "react-helmet-async";
+import EditCampaign from "../brand/EditCampaign";
+
+const TABS = [
+  { label: "Todas", value: "all" },
+  { label: "Aprovadas", value: "approved" },
+  { label: "Pendentes", value: "pending" },
+  { label: "Rejeitadas", value: "rejected" },
+  { label: "Arquivadas", value: "archived" },
+];
+
+const STATUS_STYLES: Record<string, string> = {
+  approved: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200",
+  pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200",
+  rejected: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200",
+  archived: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  approved: "Aprovada",
+  pending: "Pendente",
+  rejected: "Rejeitada",
+  archived: "Arquivada",
+};
+
+function filterCampaigns(campaigns: Campaign[], tab: string) {
+  if (tab === "all") return campaigns;
+  if (tab === "approved") return campaigns.filter((c) => c.status === "approved");
+  if (tab === "pending") return campaigns.filter((c) => c.status === "pending");
+  if (tab === "rejected") return campaigns.filter((c) => c.status === "rejected");
+  if (tab === "archived") return campaigns.filter((c) => c.status === "archived");
+  return campaigns;
+}
+
+const CampaignList: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const { campaigns, isLoading, error } = useAppSelector((state) => state.campaign);
+  
+  const [tab, setTab] = useState("all");
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [campaignToDelete, setCampaignToDelete] = useState<number | null>(null);
+
+  const campaignsToDisplay = Array.isArray(campaigns) ? campaigns : [];
+  const filtered = filterCampaigns(campaignsToDisplay, tab);
+
+  
+  useEffect(() => {
+    const fetchCampaignsData = async () => {
+      try {
+        await dispatch(fetchCampaigns()).unwrap();
+      } catch (error) {
+        console.error('Error fetching campaigns:', error);
+        toast.error("Erro ao carregar campanhas");
+      }
+    };
+    
+    fetchCampaignsData();
+  }, [dispatch]);
+
+  
+  useEffect(() => {
+    return () => {
+      if (error) {
+        dispatch(clearError());
+      }
+    };
+  }, [dispatch, error]);
+
+  const handleOpenModal = (campaign: Campaign) => {
+    setSelectedCampaign(campaign);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedCampaign(null);
+  };
+
+  const handleApprove = async (campaignId: number) => {
+    try {
+      await dispatch(approveCampaign(campaignId)).unwrap();
+      toast.success("Campanha aprovada com sucesso!");
+      handleCloseModal();
+    } catch (error) {
+      toast.error("Erro ao aprovar campanha");
+    }
+  };
+
+  const handleReject = async (campaignId: number) => {
+    try {
+      await dispatch(rejectCampaign({ campaignId })).unwrap();
+      toast.success("Campanha rejeitada com sucesso!");
+      handleCloseModal();
+    } catch (error) {
+      toast.error("Erro ao rejeitar campanha");
+    }
+  };
+
+  const handleToggleFeatured = async (campaignId: number) => {
+    try {
+      await dispatch(toggleFeaturedCampaign(campaignId)).unwrap();
+      toast.success("Status de destaque alterado com sucesso!");
+    } catch (error) {
+      toast.error("Erro ao alterar status de destaque");
+    }
+  };
+
+  const handleEdit = (campaign: Campaign) => {
+    setSelectedCampaign(campaign);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteClick = (campaignId: number) => {
+    setCampaignToDelete(campaignId);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!campaignToDelete) return;
+    
+    try {
+      await dispatch(deleteCampaign(campaignToDelete)).unwrap();
+      toast.success("Campanha excluída com sucesso!");
+      setShowDeleteModal(false);
+      setCampaignToDelete(null);
+      await dispatch(fetchCampaigns()).unwrap();
+    } catch (error) {
+      toast.error("Erro ao excluir campanha");
+    }
+  };
+
+  const handleEditSave = async (campaignData?: any) => {
+    if (!selectedCampaign) return;
+    
+    
+    
+    if (campaignData) {
+      try {
+        await dispatch(updateCampaign({ campaignId: selectedCampaign.id, data: campaignData })).unwrap();
+        toast.success("Campanha atualizada com sucesso!");
+        setShowEditModal(false);
+        setSelectedCampaign(null);
+        await dispatch(fetchCampaigns()).unwrap();
+      } catch (error) {
+        toast.error("Erro ao atualizar campanha");
+      }
+    } else {
+      
+      setShowEditModal(false);
+      setSelectedCampaign(null);
+      await dispatch(fetchCampaigns()).unwrap();
+    }
+  };
+
+  
+  const formatDate = (dateString: string) => {
+    
+    
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      const [year, month, day] = dateString.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return date.toLocaleDateString('pt-BR');
+    }
+    
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR');
+  };
+
+  if (isLoading) {
+    return (
+      <div className="w-full mx-auto px-2 sm:px-6 py-6 dark:bg-[#171717] min-h-[92vh] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E91E63] mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Carregando campanhas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full mx-auto px-2 sm:px-6 py-6 dark:bg-[#171717] min-h-[92vh] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 dark:text-red-400 mb-4">Erro ao carregar campanhas</p>
+          <button 
+            onClick={async () => {
+              try {
+                await dispatch(fetchCampaigns()).unwrap();
+              } catch (error) {
+                console.error('Error retrying fetch campaigns:', error);
+                toast.error("Erro ao carregar campanhas");
+              }
+            }}
+            className="px-4 py-2 bg-[#E91E63] text-white rounded-lg hover:bg-pink-600 transition-colors"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const canonical = typeof window !== "undefined" ? window.location.href : "";
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+  };
+
+  return (
+    <>
+      <Helmet>
+        <title>Nexa - Todas as Campanhas</title>
+        <meta name="description" content="Browse Nexa guides filtered by brand and creator. Watch embedded videos and manage guides." />
+        {canonical && <link rel="canonical" href={canonical} />}
+        <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
+      </Helmet>
+      <div className="w-full mx-auto px-2 sm:px-6 py-6 dark:bg-[#171717] min-h-[92vh]">
+        <h2 className="text-2xl sm:text-3xl font-bold mb-1 text-gray-900 dark:text-gray-100">Todas as Campanhas</h2>
+        <p className="text-gray-500 dark:text-gray-400 mb-6 text-sm sm:text-base">Visualize e gerencie todas as campanhas da plataforma</p>
+        
+        {}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {TABS.map((t) => (
+            <button
+              key={t.value}
+              onClick={() => setTab(t.value)}
+              className={`px-5 py-2 rounded-lg font-medium border transition-colors duration-150
+                ${tab === t.value
+                  ? "bg-[#E91E63] text-white border-[#E91E63]"
+                  : "bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"}
+              `}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {}
+        <div className="bg-background rounded-xl shadow p-2 sm:p-6">
+          {filtered.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-500 dark:text-gray-400">Nenhuma campanha encontrada</p>
+            </div>
+          ) : (
+            <>
+              {}
+              <div className="hidden md:block">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="text-xs text-gray-500 dark:text-gray-400">
+                      <th className="py-3 px-2 font-medium">Nome</th>
+                      <th className="py-3 px-2 font-medium">Status</th>
+                      <th className="py-3 px-2 font-medium">Data</th>
+                      <th className="py-3 px-2 font-medium">Marca</th>
+                      <th className="py-3 px-2 font-medium">Criadores</th>
+                      <th className="py-3 px-2 font-medium">Destaque</th>
+                      <th className="py-3 px-2 font-medium text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((c) => (
+                      <tr key={c.id} className="border-t border-gray-100 dark:border-gray-800">
+                        <td className="py-4 px-2 text-sm font-medium text-gray-900 dark:text-gray-100">{c.title}</td>
+                        <td className="py-4 px-2">
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_STYLES[c.status]}`}>
+                            {STATUS_LABELS[c.status]}
+                          </span>
+                        </td>
+                        <td className="py-4 px-2 text-sm text-gray-700 dark:text-gray-300">
+                          {formatDate(c.created_at)}
+                        </td>
+                        <td className="py-4 px-2 text-sm text-gray-700 dark:text-gray-300">
+                          {c.brand?.name || 'N/A'}
+                        </td>
+                        <td className="py-4 px-2 text-sm text-center text-gray-700 dark:text-gray-300">
+                          {c.approvedCreators}
+                        </td>
+                        <td className="py-4 px-2 text-center">
+                          <button
+                            onClick={() => handleToggleFeatured(c.id)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              c.is_featured 
+                                ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:hover:bg-yellow-800' 
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
+                            }`}
+                            title={c.is_featured ? 'Remover destaque' : 'Adicionar destaque'}
+                          >
+                            <Star className={`h-4 w-4 ${c.is_featured ? 'fill-current' : ''}`} />
+                          </button>
+                        </td>
+                        <td className="py-4 px-2">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              className="px-2.5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                              onClick={() => handleEdit(c)}
+                              title="Editar"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              className="px-2.5 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                              onClick={() => handleDeleteClick(c.id)}
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              className="px-3 py-2 border border-[#E91E63] text-[#E91E63] rounded-lg hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-colors text-xs font-medium"
+                              onClick={() => handleOpenModal(c)}
+                            >
+                              Ver
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {}
+              <div className="md:hidden flex flex-col gap-3">
+                {filtered.map((c, i) => (
+                  <div key={i} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-4 flex flex-col gap-3">
+                    {}
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm leading-tight flex-1">
+                        {c.title}
+                      </h3>
+                      <button
+                        onClick={() => handleToggleFeatured(c.id)}
+                        className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                          c.is_featured 
+                            ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:hover:bg-yellow-800' 
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
+                        }`}
+                        title={c.is_featured ? 'Remover destaque' : 'Adicionar destaque'}
+                      >
+                        <Star className={`h-4 w-4 ${c.is_featured ? 'fill-current' : ''}`} />
+                      </button>
+                    </div>
+
+                    {}
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLES[c.status]}`}>
+                        {STATUS_LABELS[c.status]}
+                      </span>
+                      {c.is_featured && (
+                        <span className="text-yellow-600 dark:text-yellow-400 text-xs font-medium">⭐ Destaque</span>
+                      )}
+                    </div>
+
+                    {}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex flex-col">
+                        <span className="text-gray-500 dark:text-gray-400">Data</span>
+                        <span className="text-gray-900 dark:text-gray-100 font-medium">{formatDate(c.created_at)}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-gray-500 dark:text-gray-400">Marca</span>
+                        <span className="text-gray-900 dark:text-gray-100 font-medium">{c.brand?.name || 'N/A'}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-gray-500 dark:text-gray-400">Criadores</span>
+                        <span className="text-gray-900 dark:text-gray-100 font-medium">{c.approvedCreators}</span>
+                      </div>
+                    </div>
+
+                    {}
+                    <div className="flex flex-col gap-2 mt-1">
+                      <button
+                        className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 font-medium text-sm"
+                        onClick={() => handleEdit(c)}
+                      >
+                        <Edit className="h-4 w-4" />
+                        Editar Campanha
+                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          className="px-3 py-2.5 border-2 border-red-500 text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-1.5 font-medium text-sm"
+                          onClick={() => handleDeleteClick(c.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Excluir
+                        </button>
+                        <button
+                          className="px-3 py-2.5 border-2 border-[#E91E63] text-[#E91E63] rounded-lg hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-colors flex items-center justify-center gap-1.5 font-medium text-sm"
+                          onClick={() => handleOpenModal(c)}
+                        >
+                          <Eye className="h-4 w-4" />
+                          Ver Detalhes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {}
+        {isModalOpen && selectedCampaign && (
+          <CampaignDetail
+            campaign={selectedCampaign}
+            open={isModalOpen}
+            onOpenChange={setIsModalOpen}
+            onApprove={() => handleApprove(selectedCampaign.id)}
+            onReject={() => handleReject(selectedCampaign.id)}
+          />
+        )}
+
+        {}
+        {showEditModal && selectedCampaign && (
+          <EditCampaign
+            campaign={selectedCampaign}
+            open={showEditModal}
+            onClose={() => {
+              setShowEditModal(false);
+              setSelectedCampaign(null);
+            }}
+            onSave={handleEditSave}
+          />
+        )}
+
+        {}
+        {showDeleteModal && campaignToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                Confirmar Exclusão
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Tem certeza que deseja excluir esta campanha? Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setCampaignToDelete(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+export default CampaignList;

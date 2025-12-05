@@ -1,0 +1,3567 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+import { Button } from "../../components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../components/ui/dialog";
+import { Label } from "../../components/ui/label";
+import CampaignTimelineSidebar from "../../components/CampaignTimelineSidebar";
+import {
+  Avatar,
+  AvatarImage,
+  AvatarFallback,
+} from "../../components/ui/avatar";
+import { Badge } from "../../components/ui/badge";
+import { cn } from "../../lib/utils";
+import {
+  SearchIcon,
+  Send,
+  Paperclip,
+  File,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  X,
+  Check,
+  Clock,
+  Download,
+  ExternalLink,
+  MoreVertical,
+  Eye,
+  FileText,
+  ImageIcon,
+  FileVideo,
+  FileAudio,
+  Archive,
+  Code,
+  Sparkles,
+  Zap,
+  Star,
+  Share2,
+  Copy,
+  Maximize2,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Minimize2,
+  Briefcase,
+  AlertCircle,
+} from "lucide-react";
+import { useSocket } from "../../hooks/useSocket";
+import { chatService, ChatRoom, Message } from "../../services/chatService";
+import { useAppSelector } from "../../store/hooks";
+import { format, isToday, isYesterday } from "date-fns";
+import CreateOffer from "../../components/brand/CreateOffer";
+import { hiringApi, Offer } from "../../api/hiring";
+import { useToast } from "../../hooks/use-toast";
+import ChatOfferMessage, { ChatOffer } from "../../components/ChatOfferMessage";
+import ContractCompletionMessage from "../../components/ContractCompletionMessage";
+import ReviewModal from "../../components/brand/ReviewModal";
+import CampaignFinalizationModal from "../../components/brand/CampaignFinalizationModal";
+
+interface ChatPageProps {
+  setComponent?: (component: string) => void;
+  campaignId?: number;
+  creatorId?: string;
+}
+
+export default function ChatPage({ setComponent, campaignId, creatorId }: ChatPageProps) {
+  const { user } = useAppSelector((state) => state.auth);
+  const { toast } = useToast();
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+  const [isCurrentUserTyping, setIsCurrentUserTyping] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [openDropdowns, setOpenDropdowns] = useState<Set<number>>(new Set());
+
+  
+  const [showOfferModal, setShowOfferModal] = useState(false);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [isLoadingOffers, setIsLoadingOffers] = useState(false);
+  const [offersReady, setOffersReady] = useState(false);
+  const [existingOfferId, setExistingOfferId] = useState<number | null>(null);
+  const [showExistingOfferModal, setShowExistingOfferModal] = useState(false);
+
+  
+  const [contracts, setContracts] = useState<any[]>([]);
+  const [isLoadingContracts, setIsLoadingContracts] = useState(false);
+
+  
+  const [imageViewer, setImageViewer] = useState<{
+    isOpen: boolean;
+    imageUrl: string;
+    imageName: string;
+    imageSize?: string;
+  }>({
+    isOpen: false,
+    imageUrl: "",
+    imageName: "",
+    imageSize: "",
+  });
+  const [imageZoom, setImageZoom] = useState(1);
+  const [imageRotation, setImageRotation] = useState(0);
+
+  
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [contractToReview, setContractToReview] = useState<any>(null);
+
+  
+  const [showCampaignFinalizationModal, setShowCampaignFinalizationModal] = useState(false);
+  const [contractToFinalize, setContractToFinalize] = useState<any>(null);
+
+  
+  const [showTerminateModal, setShowTerminateModal] = useState(false);
+  const [contractToTerminate, setContractToTerminate] = useState<any>(null);
+  const [terminationMessage, setTerminationMessage] = useState("");
+
+  
+  const [showTimelineSidebar, setShowTimelineSidebar] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+  const [viewportOffset, setViewportOffset] = useState(0);
+
+  useEffect(() => {
+    const vv = (window as any).visualViewport as VisualViewport | undefined;
+    if (!vv) return;
+
+    const handleResize = () => {
+      const bottomInset = Math.max(0, window.innerHeight - (vv.height + Math.round(vv.offsetTop)));
+      setViewportOffset(bottomInset);
+      if (inputRef.current) {
+        inputRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    };
+
+    vv.addEventListener("resize", handleResize);
+    vv.addEventListener("scroll", handleResize);
+    handleResize();
+    return () => {
+      vv.removeEventListener("resize", handleResize);
+      vv.removeEventListener("scroll", handleResize);
+    };
+  }, []);
+  const imageViewerRef = useRef<HTMLDivElement>(null);
+
+
+  
+  const {
+    socket,
+    isConnected,
+    connectionError,
+    joinRoom,
+    leaveRoom,
+    sendMessage,
+    startTyping,
+    stopTyping,
+    markMessagesAsRead,
+    onOfferCreated,
+    onOfferAccepted,
+    onOfferRejected,
+    onOfferCancelled,
+    onContractCompleted,
+
+    onContractActivated,
+    sendOfferAcceptanceMessage,
+    reconnect,
+  } = useSocket({ enableNotifications: false, enableChat: true });
+
+  
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+
+    };
+  }, []);
+
+  
+  useEffect(() => {
+    if (isMountedRef.current) {
+      loadChatRooms();
+    }
+  }, []); 
+
+  
+  useEffect(() => {
+    return () => {
+      if (selectedRoom && isCurrentUserTyping) {
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = null;
+        }
+        setIsCurrentUserTyping(false);
+        stopTyping(selectedRoom.room_id);
+      }
+    };
+  }, [selectedRoom, isCurrentUserTyping, stopTyping]);
+
+  
+  useEffect(() => {
+    setTypingUsers(new Set());
+  }, [selectedRoom?.room_id]);
+
+  
+  useEffect(() => {
+    if (!isMountedRef.current) return;
+
+    const selectedRoomId = localStorage.getItem("selectedChatRoom");
+    if (selectedRoomId && chatRooms.length > 0) {
+      const room = chatRooms.find((r) => r.room_id === selectedRoomId);
+      if (room) {
+        setSelectedRoom(room);
+        localStorage.removeItem("selectedChatRoom"); 
+      }
+    }
+  }, [chatRooms]);
+
+  
+  useEffect(() => {
+    if (!isMountedRef.current || !campaignId || !creatorId || chatRooms.length === 0) return;
+    
+    
+    const room = chatRooms.find((r) => 
+      r.campaign_id === campaignId && 
+      r.other_user.id === parseInt(creatorId)
+    );
+    
+    if (room) {
+      setSelectedRoom(room);
+    }
+  }, [campaignId, creatorId, chatRooms]);
+
+  
+  useEffect(() => {
+    if (!isMountedRef.current) return;
+
+    
+    const scrollToBottom = () => {
+      if (messagesEndRef.current && isMountedRef.current) {
+        try {
+          messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        } catch (error) {
+          console.warn("Error scrolling to bottom:", error);
+        }
+      }
+    };
+
+    requestAnimationFrame(scrollToBottom);
+  }, [messages]);
+
+  
+  useEffect(() => {
+    if (!isMountedRef.current) return;
+
+    if (selectedRoom) {
+      joinRoom(selectedRoom.room_id);
+      
+      
+      setOffersReady(false);
+      
+      
+      const loadRoomData = async () => {
+        try {
+          
+          await Promise.all([
+            loadOffers(selectedRoom.room_id),
+            loadContracts(selectedRoom.room_id)
+          ]);
+          
+          
+          await loadMessages(selectedRoom.room_id);
+        } catch (error) {
+          console.error('Error loading room data:', error);
+        }
+      };
+      
+      loadRoomData();
+
+      return () => {
+        if (isMountedRef.current) {
+          leaveRoom(selectedRoom.room_id);
+        }
+      };
+    }
+  }, [selectedRoom, joinRoom, leaveRoom]);
+
+      
+
+
+
+  
+  useEffect(() => {
+    if (!socket || !isMountedRef.current) return;
+
+    
+    const handleNewMessage = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        if (data.senderId !== user?.id) {
+          const newMessage: Message = {
+            id: data.messageId || Date.now(), 
+            message: data.message,
+            message_type: data.messageType,
+            sender_id: data.senderId,
+            sender_name: data.senderName,
+            sender_avatar: data.senderAvatar,
+            is_sender: data.senderId === user?.id,
+            file_path: data.fileData?.file_path,
+            file_name: data.fileData?.file_name,
+            file_size: data.fileData?.file_size,
+            file_type: data.fileData?.file_type,
+            file_url: data.fileData?.file_url,
+            is_read: false,
+            created_at: data.timestamp || new Date().toISOString(),
+            offer_data: data.offerData, 
+          };
+
+          setMessages((prev) => {
+            
+            if (prev.some(msg => msg.id === newMessage.id)) {
+              console.warn('Attempted to add duplicate socket message:', newMessage.id);
+              return prev;
+            }
+            return [...prev, newMessage];
+          });
+
+          
+          markMessagesAsRead(data.roomId, [newMessage.id]).catch((error) => {
+            console.warn("Error marking message as read:", error);
+          });
+        }
+      }
+
+      
+      
+      const roomUpdateMessage: Message = {
+        id: data.messageId || Date.now(),
+        message: data.message,
+        message_type: data.messageType,
+        sender_id: data.senderId,
+        sender_name: data.senderName,
+        sender_avatar: data.senderAvatar,
+        is_sender: data.senderId === user?.id,
+        file_path: data.fileData?.file_path,
+        file_name: data.fileData?.file_name,
+        file_size: data.fileData?.file_size,
+        file_type: data.fileData?.file_type,
+        file_url: data.fileData?.file_url,
+        is_read: false,
+        created_at: data.timestamp || new Date().toISOString(),
+        offer_data: data.offerData,
+      };
+
+      setChatRooms((prevRooms) => {
+        const updatedRooms = prevRooms.map((room) => {
+          if (room.room_id === data.roomId) {
+            return {
+              ...room,
+              last_message: {
+                id: roomUpdateMessage.id,
+                message: roomUpdateMessage.message,
+                message_type: roomUpdateMessage.message_type,
+                sender_id: roomUpdateMessage.sender_id,
+                is_sender: roomUpdateMessage.is_sender,
+                created_at: roomUpdateMessage.created_at,
+              },
+              last_message_at: roomUpdateMessage.created_at,
+              unread_count: room.unread_count + (roomUpdateMessage.is_sender ? 0 : 1),
+            };
+          }
+          return room;
+        });
+        
+        
+        return updatedRooms.sort((a, b) => {
+          const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+          const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+          return bTime - aTime;
+        });
+      });
+    };
+
+    
+    const handleUserTyping = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        setTypingUsers((prev) => {
+          const newSet = new Set(prev);
+          if (data.isTyping) {
+            newSet.add(data.userName);
+          } else {
+            newSet.delete(data.userName);
+          }
+          return newSet;
+        });
+      }
+    };
+
+    
+    const handleMessagesRead = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            data.messageIds.includes(msg.id)
+              ? { ...msg, is_read: true, read_at: data.timestamp }
+              : msg
+          )
+        );
+      }
+    };
+
+    socket.on("new_message", handleNewMessage);
+    socket.on("user_typing", handleUserTyping);
+    socket.on("messages_read", handleMessagesRead);
+
+    return () => {
+      try {
+        socket.off("new_message", handleNewMessage);
+        socket.off("user_typing", handleUserTyping);
+        socket.off("messages_read", handleMessagesRead);
+      } catch (error) {
+        console.warn("Error removing socket listeners:", error);
+      }
+    };
+  }, [socket, selectedRoom, user, markMessagesAsRead]);
+
+  
+  useEffect(() => {
+    if (!socket || !isMountedRef.current) return;
+
+    
+    const handleOfferCreated = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        setOffers((prev) => {
+          const newOffer: Offer = {
+            id: data.offerData.id,
+            title: data.offerData.title,
+            description: data.offerData.description,
+            budget: data.offerData.formatted_budget,
+            estimated_days: data.offerData.estimated_days,
+            requirements: [],
+            status: data.offerData.status as 'pending' | 'accepted' | 'rejected' | 'expired',
+            expires_at: data.offerData.expires_at,
+            days_until_expiry: data.offerData.days_until_expiry,
+            is_expiring_soon: data.offerData.days_until_expiry <= 1,
+            is_expired: data.offerData.status === 'expired',
+            can_be_accepted: false, 
+            can_be_rejected: false, 
+            can_be_cancelled: data.offerData.status === 'pending' && user?.role === 'brand',
+            other_user: {
+              id: user?.role === 'brand' ? data.offerData.creator_id : data.offerData.brand_id,
+              name: '',
+              avatar_url: '',
+            },
+            created_at: new Date().toISOString(),
+          };
+          return [newOffer, ...prev];
+        });
+
+        
+        loadMessages(selectedRoom.room_id);
+      }
+    };
+
+    
+    const handleOfferAccepted = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        setOffers((prev) =>
+          prev.map((offer) =>
+            offer.id === data.offerData.id
+              ? { ...offer, status: 'accepted' }
+              : offer
+          )
+        );
+
+        
+        if (data.contractData) {
+          setContracts((prev) => {
+            const newContract = {
+              id: data.contractData.id,
+              title: data.contractData.title,
+              description: data.contractData.description,
+              status: data.contractData.status,
+              workflow_status: data.contractData.workflow_status,
+              can_be_completed: data.contractData.can_be_completed,
+            };
+            return [newContract, ...prev];
+          });
+        }
+
+        
+        loadMessages(selectedRoom.room_id);
+      }
+    };
+
+    
+    const handleOfferAcceptanceMessage = (data: any) => {
+      
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        
+        const confirmationMessage: Message = {
+          id: Date.now(), 
+          message: `✅ Oferta aceita com sucesso! Contrato criado.`,
+          message_type: 'text',
+          sender_id: data.senderId,
+          sender_name: data.senderName,
+          sender_avatar: data.senderAvatar,
+          is_sender: data.senderId === user?.id,
+          is_read: false,
+          created_at: data.timestamp,
+        };
+
+        setMessages((prev) => [...prev, confirmationMessage]);
+
+        
+        setTimeout(() => {
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 100);
+      } 
+    };
+
+    
+    const handleOfferRejected = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        setOffers((prev) =>
+          prev.map((offer) =>
+            offer.id === data.offerData.id
+              ? { ...offer, status: 'rejected' }
+              : offer
+          )
+        );
+
+        
+        loadMessages(selectedRoom.room_id);
+      }
+    };
+
+    
+    const handleOfferCancelled = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        setOffers((prev) =>
+          prev.map((offer) =>
+            offer.id === data.offerData.id
+              ? { ...offer, status: 'cancelled' }
+              : offer
+          )
+        );
+
+        
+        loadMessages(selectedRoom.room_id);
+      }
+    };
+
+    
+    const handleContractCompleted = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        setContracts((prev) =>
+          prev.map((contract) =>
+            contract.id === data.contractData.id
+              ? {
+                ...contract,
+                ...data.contractData,
+                status: 'completed',
+                workflow_status: 'waiting_review',
+                can_review: true,
+              }
+              : contract
+          )
+        );
+
+        
+        toast({
+          title: "Contrato Finalizado",
+          description: "O contrato foi finalizado com sucesso!",
+        });
+
+        
+        loadMessages(selectedRoom.room_id);
+      }
+    };
+
+    
+    const handleContractTerminated = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        setContracts((prev) =>
+          prev.map((contract) =>
+            contract.id === data.contractData.id
+              ? {
+                ...contract,
+                ...data.contractData,
+                status: 'terminated',
+                workflow_status: 'terminated',
+              }
+              : contract
+          )
+        );
+
+        
+        toast({
+          title: "Contrato Terminado",
+          description: data.terminationReason || "O contrato foi terminado",
+        });
+
+        
+        loadMessages(selectedRoom.room_id);
+      }
+    };
+
+    
+    const handleContractActivated = (data: any) => {
+      if (!isMountedRef.current) return;
+
+      if (data.roomId === selectedRoom?.room_id) {
+        
+        setContracts((prev) => {
+          const existingContract = prev.find(c => c.id === data.contractData.id);
+          if (existingContract) {
+            return prev.map((contract) =>
+              contract.id === data.contractData.id
+                ? {
+                  ...contract,
+                  ...data.contractData,
+                  status: 'active',
+                  workflow_status: data.contractData.workflow_status,
+                }
+                : contract
+            );
+          } else {
+            
+            return [data.contractData, ...prev];
+          }
+        });
+
+        
+
+        
+        toast({
+          title: "Contrato Ativado",
+          description: "O contrato foi ativado com sucesso!",
+        });
+
+        
+        loadMessages(selectedRoom.room_id);
+      }
+    };
+
+    
+    socket.on('offer_created', handleOfferCreated);
+    socket.on('offer_accepted', handleOfferAccepted);
+    socket.on('offer_acceptance_message', handleOfferAcceptanceMessage);
+    socket.on('offer_rejected', handleOfferRejected);
+    socket.on('offer_cancelled', handleOfferCancelled);
+    socket.on('contract_completed', handleContractCompleted);
+    socket.on('contract_terminated', handleContractTerminated);
+    socket.on('contract_activated', handleContractActivated);
+
+    return () => {
+      
+      socket.off('offer_created', handleOfferCreated);
+      socket.off('offer_accepted', handleOfferAccepted);
+      socket.off('offer_acceptance_message', handleOfferAcceptanceMessage);
+      socket.off('offer_rejected', handleOfferRejected);
+      socket.off('offer_cancelled', handleOfferCancelled);
+      socket.off('contract_completed', handleContractCompleted);
+      socket.off('contract_terminated', handleContractTerminated);
+      socket.off('contract_activated', handleContractActivated);
+    };
+  }, [socket, selectedRoom, user, onOfferCreated, onOfferAccepted, onOfferRejected, onOfferCancelled, onContractCompleted, onContractActivated]);
+
+  
+  useEffect(() => {
+    if (typingUsers.size > 0) {
+      const timeoutId = setTimeout(() => {
+        setTypingUsers(new Set());
+      }, 3000); 
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
+    }
+  }, [typingUsers]);
+
+  const loadChatRooms = async () => {
+    if (!isMountedRef.current) return;
+
+    try {
+      setIsLoading(true);
+      const response = await chatService.getChatRooms();
+      if (isMountedRef.current) {
+        const roomsData = response || [];
+        
+        const sortedRooms = roomsData.sort((a, b) => {
+          const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+          const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+          return bTime - aTime;
+        });
+        setChatRooms(sortedRooms);
+
+        
+        if (!selectedRoom && sortedRooms.length > 0) {
+          handleConversationSelect(sortedRooms[0]);
+        }
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar salas de chat",
+        variant: "destructive",
+      });
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  
+  const handleConversationSelect = async (room: ChatRoom) => {
+    if (!isMountedRef.current) return;
+
+    
+    if (selectedRoom && isCurrentUserTyping) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      setIsCurrentUserTyping(false);
+      stopTyping(selectedRoom.room_id);
+    }
+
+    
+    setTypingUsers(new Set());
+
+    setSelectedRoom(room);
+
+    
+    await loadMessages(room.room_id);
+
+    
+    await loadContracts(room.room_id);
+
+    
+    await loadOffers(room.room_id);
+
+    
+
+    
+    setTimeout(() => {
+      if (inputRef.current && isMountedRef.current) {
+        inputRef.current.focus();
+      }
+    }, 100);
+  };
+
+  
+  const loadMessages = useCallback(async (roomId: string) => {
+    if (!isMountedRef.current) return;
+
+    try {
+      setIsLoading(true);
+      const response = await chatService.getMessages(roomId);
+      if (isMountedRef.current) {
+        
+        const messageIds = new Set();
+        const deduplicatedMessages = response.messages.filter((message) => {
+          if (messageIds.has(message.id)) {
+            return false; 
+          }
+          messageIds.add(message.id);
+          return true;
+        });
+
+        
+        const guideMessagesKey = `guide_messages_${roomId}`;
+        const hasGuideMessagesInStorage = localStorage.getItem(guideMessagesKey);
+        const needsGuideMessages = !hasGuideMessagesInStorage;
+
+        
+        let finalMessages = [...deduplicatedMessages];
+        if (needsGuideMessages && user) {
+          
+          const isBrand = user.role === 'brand';
+          
+          let guideMessage = '';
+          if (isBrand) {
+            guideMessage = "🎉 Parabéns pela parceria iniciada com uma criadora da nossa plataforma!\n\n" +
+              "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito. Quanto mais específica for a comunicação, maior será a qualidade da entrega.\n\n" +
+              "📋 Próximos Passos Importantes:\n\n" +
+              "• 💰 Saldo da Campanha: Insira o valor da campanha na aba \"Saldo\" da plataforma\n" +
+              "• ✅ Aprovação de Conteúdo: Avalie o roteiro antes da gravação para garantir alinhamento\n" +
+              "• 🎬 Entrega Final: Após receber o conteúdo pronto e editado, libere o pagamento\n" +
+              "• ⭐ Finalização: Clique em \"Finalizar Campanha\" e avalie o trabalho entregue\n" +
+              "• 📝 Briefing: Reforce os pontos principais com a criadora para alinhar com o objetivo da marca\n" +
+              "• 🔄 Ajustes: Permita até 2 pedidos de ajustes por vídeo caso necessário\n\n" +
+              "🔒 Regras de Segurança da Campanha:\n\n" +
+              "✅ Comunicação Exclusiva: Toda comunicação deve ser feita pelo chat da NEXA\n" +
+              "❌ Proteção de Dados: Não compartilhe dados bancários, contatos pessoais ou WhatsApp\n" +
+              "⚠️ Cumprimento de Prazos: Descumprimento pode resultar em advertência ou bloqueio\n" +
+              "🚫 Cancelamento: Em caso de cancelamento, o produto deve ser solicitado de volta\n\n" +
+              "💼 A NEXA está aqui para facilitar conexões seguras e profissionais!\n" +
+              "Conte conosco para apoiar o sucesso da sua campanha! 📢✨";
+          } else {
+            guideMessage = "🩷 Parabéns, você foi aprovada em mais uma campanha da NEXA!\n\n" +
+              "Estamos muito felizes em contar com você e esperamos que mostre toda sua criatividade, comprometimento e qualidade para representar bem a marca e a nossa plataforma.\n\n" +
+              "Antes de começar, fique atenta aos pontos abaixo para garantir uma parceria de sucesso:\n\n" +
+              "• Confirme seu endereço de envio o quanto antes, para que o produto possa ser encaminhado sem atrasos.\n" +
+              "• Você devera entregar o roteiro da campanha em até 5 dias úteis.\n" +
+              "• É essencial seguir todas as orientações da marca presentes no briefing.\n" +
+              "• Aguarde a aprovação do roteiro antes de gravar o conteúdo.\n" +
+              "• Após a aprovação do roteiro, o conteúdo final deve ser entregue em até 5 dias úteis.\n" +
+              "• O vídeo deve ser enviado com qualidade profissional, e poderá passar por até 2 solicitações de ajustes, caso não esteja conforme o briefing.\n" +
+              "• Pedimos que mantenha o retorno rápido nas mensagens dentro do chat da plataforma.\n\n" +
+              "Atenção para algumas regras importantes:\n\n" +
+              "✔ Toda a comunicação deve acontecer exclusivamente pelo chat da Anexa.\n" +
+              "✘ Não é permitido compartilhar dados bancários, e-mails ou número de WhatsApp dentro da plataforma.\n" +
+              "⚠️ O não cumprimento dos prazos ou regras pode acarretar em penalizações ou banimento.\n" +
+              "🚫 Caso a campanha seja cancelada, o produto deverá ser devolvido, e a criadora poderá ser punida.\n\n" +
+              "Estamos aqui para garantir a melhor experiência para criadoras e marcas. Boa campanha! 💼💡";
+          }
+          
+          const quoteMessage = "💼 Detalhes da Campanha:\n\n" +
+            "Status: 🟢 Conectado\n\n" +
+            "Você está agora conectado e pode começar a conversar. Use o chat para todas as comunicações e siga as diretrizes da plataforma para uma parceria de sucesso.";
+          
+          
+          const guideMsg: Message = {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            message: guideMessage,
+            message_type: 'system',
+            sender_id: user.id || 0,
+            sender_name: user.name || 'Sistema',
+            sender_avatar: user.avatar_url,
+            is_sender: false,
+            is_read: false,
+            created_at: new Date().toISOString(),
+          };
+          
+          
+          const quoteMsg: Message = {
+            id: Date.now() + Math.floor(Math.random() * 1000) + 1,
+            message: quoteMessage,
+            message_type: 'system',
+            sender_id: user.id || 0,
+            sender_name: user.name || 'Sistema',
+            sender_avatar: user.avatar_url,
+            is_sender: false,
+            is_read: false,
+            created_at: new Date().toISOString(),
+          };
+          
+          
+          finalMessages = [guideMsg, quoteMsg, ...deduplicatedMessages];
+          
+          
+          localStorage.setItem(guideMessagesKey, 'true');
+          
+  
+        } else if (hasGuideMessagesInStorage) {
+          
+          const existingGuideMessages = deduplicatedMessages.filter(msg => 
+            msg.message_type === 'system' && 
+            (msg.message.includes('Parabéns') || msg.message.includes('parceria'))
+          );
+          
+          if (existingGuideMessages.length === 0) {
+
+            
+            const isBrand = user?.role === 'brand';
+            
+            let guideMessage = '';
+            if (isBrand) {
+              guideMessage = "🎉 Parabéns pela parceria iniciada com uma criadora da nossa plataforma!\n\n" +
+                "Para garantir o melhor resultado possível, é essencial que você oriente a criadora com detalhamento e clareza sobre como deseja que o conteúdo seja feito. Quanto mais específica for a comunicação, maior será a qualidade da entrega.\n\n" +
+                "📋 Próximos Passos Importantes:\n\n" +
+                "• 💰 Saldo da Campanha: Insira o valor da campanha na aba \"Saldo\" da plataforma\n" +
+                "• ✅ Aprovação de Conteúdo: Avalie o roteiro antes da gravação para garantir alinhamento\n" +
+                "• 🎬 Entrega Final: Após receber o conteúdo pronto e editado, libere o pagamento\n" +
+                "• ⭐ Finalização: Clique em \"Finalizar Campanha\" e avalie o trabalho entregue\n" +
+                "• 📝 Briefing: Reforce os pontos principais com a criadora para alinhar com o objetivo da marca\n" +
+                "• 🔄 Ajustes: Permita até 2 pedidos de ajustes por vídeo caso necessário\n\n" +
+                "🔒 Regras de Segurança da Campanha:\n\n" +
+                "✅ Comunicação Exclusiva: Toda comunicação deve ser feita pelo chat da NEXA\n" +
+                "❌ Proteção de Dados: Não compartilhe dados bancários, contatos pessoais ou WhatsApp\n" +
+                "⚠️ Cumprimento de Prazos: Descumprimento pode resultar em advertência ou bloqueio\n" +
+                "🚫 Cancelamento: Em caso de cancelamento, o produto deve ser solicitado de volta\n\n" +
+                "💼 A NEXA está aqui para facilitar conexões seguras e profissionais!\n" +
+                "Conte conosco para apoiar o sucesso da sua campanha! 📢✨";
+            } else {
+              guideMessage = "🩷 Parabéns, você foi aprovada em mais uma campanha da NEXA!\n\n" +
+                "Estamos muito felizes em contar com você e esperamos que mostre toda sua criatividade, comprometimento e qualidade para representar bem a marca e a nossa plataforma.\n\n" +
+                "Antes de começar, fique atenta aos pontos abaixo para garantir uma parceria de sucesso:\n\n" +
+                "• Confirme seu endereço de envio o quanto antes, para que o produto possa ser encaminhado sem atrasos.\n" +
+                "• Você devera entregar o roteiro da campanha em até 5 dias úteis.\n" +
+                "• É essencial seguir todas as orientações da marca presentes no briefing.\n" +
+                "• Aguarde a aprovação do roteiro antes de gravar o conteúdo.\n" +
+                "• Após a aprovação do roteiro, o conteúdo final deve ser entregue em até 5 dias úteis.\n" +
+                "• O vídeo deve ser enviado com qualidade profissional, e poderá passar por até 2 solicitações de ajustes, caso não esteja conforme o briefing.\n" +
+                "• Pedimos que mantenha o retorno rápido nas mensagens dentro do chat da plataforma.\n\n" +
+                "Atenção para algumas regras importantes:\n\n" +
+                "✔ Toda a comunicação deve acontecer exclusivamente pelo chat da Anexa.\n" +
+                "✘ Não é permitido compartilhar dados bancários, e-mails ou número de WhatsApp dentro da plataforma.\n" +
+                "⚠️ O não cumprimento dos prazos ou regras pode acarretar em penalizações ou banimento.\n" +
+                "🚫 Caso a campanha seja cancelada, o produto deverá ser devolvido, e a criadora poderá ser punida.\n\n" +
+                "Estamos aqui para garantir a melhor experiência para criadoras e marcas. Boa campanha! 💼💡";
+            }
+            
+            const quoteMessage = "💼 Detalhes da Campanha:\n\n" +
+              "Status: 🟢 Conectado\n\n" +
+              "Você está agora conectado e pode começar a conversar. Use o chat para todas as comunicações e siga as diretrizes da plataforma para uma parceria de sucesso.";
+            
+            
+            const guideMsg: Message = {
+              id: Date.now() + Math.floor(Math.random() * 1000),
+              message: guideMessage,
+              message_type: 'system',
+              sender_id: user?.id || 0,
+              sender_name: user?.name || 'Sistema',
+              sender_avatar: user?.avatar_url,
+              is_sender: false,
+              is_read: false,
+              created_at: new Date().toISOString(),
+            };
+            
+            
+            const quoteMsg: Message = {
+              id: Date.now() + Math.floor(Math.random() * 1000) + 1,
+              message: quoteMessage,
+              message_type: 'system',
+              sender_id: user?.id || 0,
+              sender_name: user?.name || 'Sistema',
+              sender_avatar: user?.avatar_url,
+              is_sender: false,
+              is_read: false,
+              created_at: new Date().toISOString(),
+            };
+            
+            
+            finalMessages = [guideMsg, quoteMsg, ...deduplicatedMessages];
+          }
+        }
+
+        setMessages(finalMessages);
+        
+
+
+        
+        joinRoom(roomId);
+
+        
+        const unreadMessages = deduplicatedMessages.filter(
+          (msg) => !msg.is_sender && !msg.is_read
+        );
+
+        if (unreadMessages.length > 0) {
+          try {
+            await markMessagesAsRead(
+              roomId,
+              unreadMessages.map((msg) => msg.id)
+            );
+          } catch (error) {
+            console.warn('Failed to mark messages as read:', error);
+            
+          }
+        }
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar mensagens",
+        variant: "destructive",
+      });
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+    }
+  }, [joinRoom, markMessagesAsRead, toast, user]);
+
+  
+  const loadContracts = useCallback(async (roomId: string): Promise<void> => {
+    if (!isMountedRef.current) return;
+
+    try {
+      setIsLoadingContracts(true);
+      const response = await hiringApi.getContractsForChatRoom(roomId);
+      const contractsData = response.data;
+
+      if (isMountedRef.current) {
+        
+        const contractsWithReviewStatus = await Promise.all(
+          contractsData.map(async (contract: any) => {
+            try {
+              const reviewStatusResponse =
+                await hiringApi.getContractReviewStatus(contract.id);
+              return {
+                ...contract,
+                ...reviewStatusResponse.data,
+              };
+            } catch (error) {
+              
+              return contract;
+            }
+          })
+        );
+
+        setContracts(contractsWithReviewStatus);
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar contratos",
+        variant: "destructive",
+      });
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingContracts(false);
+      }
+    }
+  }, [hiringApi, toast]);
+
+  
+  const loadOffers = useCallback(async (roomId: string): Promise<void> => {
+    if (!isMountedRef.current) return;
+
+    try {
+      setIsLoadingOffers(true);
+      const response = await hiringApi.getOffersForChatRoom(roomId);
+      const offersData = response.data;
+
+      if (isMountedRef.current) {
+        setOffers(offersData);
+        setOffersReady(true);
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar ofertas",
+        variant: "destructive",
+      });
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingOffers(false);
+      }
+    }
+  }, [hiringApi, toast]);
+
+
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRoom || (!input.trim() && !selectedFile) || isUploading) return;
+
+    try {
+      let newMessage: Message;
+
+      if (selectedFile) {
+        setIsUploading(true);
+        setUploadProgress(0);
+        
+        
+        const progressInterval = setInterval(() => {
+          setUploadProgress(prev => {
+            if (prev >= 90) {
+              clearInterval(progressInterval);
+              return prev;
+            }
+            return prev + Math.random() * 20;
+          });
+        }, 200);
+
+        newMessage = await sendMessage(
+          selectedRoom.room_id,
+          input.trim(), 
+          selectedFile
+        );
+        
+        clearInterval(progressInterval);
+        setUploadProgress(100);
+        
+        if (isMountedRef.current) {
+          setSelectedFile(null);
+          setFilePreview(null);
+        }
+      } else {
+        newMessage = await sendMessage(selectedRoom.room_id, input.trim());
+      }
+
+      if (isMountedRef.current) {
+        
+        
+        setMessages(prev => {
+          const updated = [...prev, newMessage];
+          return updated;
+        });
+        setInput("");
+
+        
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = null;
+        }
+        setIsCurrentUserTyping(false);
+        stopTyping(selectedRoom.room_id);
+      }
+    } catch (error) {
+      console.error("[ChatPage] Error sending message:", error);
+      toast({
+        title: "Erro ao enviar mensagem",
+        description: error instanceof Error ? error.message : "Ocorreu um erro inesperado",
+        variant: "destructive",
+      });
+    } finally {
+      if (isMountedRef.current) {
+        setIsUploading(false);
+        setUploadProgress(0);
+      }
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (!isMountedRef.current) return;
+
+    setInput(e.target.value);
+
+    const el = e.currentTarget;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+
+    
+    if (selectedRoom) {
+      
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      
+      if (!isCurrentUserTyping) {
+        setIsCurrentUserTyping(true);
+        startTyping(selectedRoom.room_id);
+      }
+
+      
+      typingTimeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          stopTyping(selectedRoom.room_id);
+          setIsCurrentUserTyping(false);
+        }
+      }, 1000); 
+    }
+  };
+
+  
+  const handleKeyUp = () => {
+    if (!isMountedRef.current || !selectedRoom) return;
+
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current && isCurrentUserTyping) {
+        stopTyping(selectedRoom.room_id);
+        setIsCurrentUserTyping(false);
+      }
+    }, 500); 
+  };
+
+  
+  const handleInputBlur = () => {
+    if (!isMountedRef.current || !selectedRoom) return;
+
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (isCurrentUserTyping) {
+      setIsCurrentUserTyping(false);
+      stopTyping(selectedRoom.room_id);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isMountedRef.current) return;
+
+    const file = e.target.files?.[0];
+    if (file) {
+      
+      const maxSize = 10 * 1024 * 1024; 
+      if (file.size > maxSize) {
+        toast({
+          title: "Arquivo muito grande",
+          description: "O tamanho máximo permitido é 10MB",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      
+      const allowedTypes = [
+        'image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain',
+        'application/zip',
+        'application/x-rar-compressed',
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/flac',
+        'video/mp4', 'video/avi', 'video/quicktime', 'video/x-msvideo',
+        'text/javascript', 'text/typescript', 'text/html', 'text/css', 'application/json'
+      ];
+      
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "Tipo de arquivo não suportado",
+          description: "Por favor, selecione um arquivo de imagem, documento, áudio, vídeo ou código",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setSelectedFile(file);
+
+      
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (isMountedRef.current) {
+            setFilePreview(e.target?.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      
+      const syntheticEvent = { target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>;
+      handleFileSelect(syntheticEvent);
+    }
+  };
+
+  const handleBackNavigation = () => {
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    
+    setSelectedFile(null);
+    setFilePreview(null);
+
+    
+    setComponent?.("Minhas campanhas");
+  };
+
+  
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 Bytes";
+
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  
+  const getFileExtension = (filename: string): string => {
+    return filename.split(".").pop()?.toLowerCase() || "";
+  };
+
+  
+  const getMimeType = (filename: string): string => {
+    const extension = getFileExtension(filename);
+    const mimeTypes: { [key: string]: string } = {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      pdf: "application/pdf",
+      doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      txt: "text/plain",
+      zip: "application/zip",
+      rar: "application/x-rar-compressed",
+      mp4: "video/mp4",
+      mp3: "audio/mpeg",
+      wav: "audio/wav",
+    };
+
+    return mimeTypes[extension] || "application/octet-stream";
+  };
+
+  const filteredRooms = chatRooms
+    .filter(
+      (room) =>
+        room.other_user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        room.campaign_title.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      
+      const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+      const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+      return bTime - aTime;
+    });
+
+  const formatMessageTime = (dateString: string) => {
+    const date = new Date(dateString);
+    if (isToday(date)) {
+      return format(date, "HH:mm");
+    } else if (isYesterday(date)) {
+      return "Yesterday";
+    } else {
+      return format(date, "MMM d");
+    }
+  };
+
+  
+  const activeContract = contracts.find(
+    (contract) => contract.status === "active"
+  );
+
+
+
+
+
+  
+  
+  const canSendOffer =
+    user?.role === "brand" &&
+    selectedRoom &&
+    !activeContract &&
+    !contracts.some(
+      (contract) =>
+        contract.status === "active" 
+    ) &&
+    !offers.some((offer) => offer.status === "accepted" || offer.status === "pending"); 
+
+  
+  const hasCompletedContract = contracts.some(
+    (contract) => 
+      contract.status === "completed" && 
+      (contract.workflow_status === "payment_available" || 
+       contract.workflow_status === "payment_withdrawn" ||
+       contract.workflow_status === undefined) 
+  );
+
+
+
+  
+  const canReview = contracts.some(
+    (contract) =>
+      contract.status === "completed" && contract.can_review === true
+  );
+
+  
+  const handleOfferCreated = () => {
+    setShowOfferModal(false);
+    loadChatRooms();
+  };
+
+  
+  const handleOfferCancel = () => {
+    setShowOfferModal(false);
+  };
+
+  
+  const handleExistingOffer = (offerId: number) => {
+    setExistingOfferId(offerId);
+    setShowExistingOfferModal(true);
+    setShowOfferModal(false);
+  };
+
+  
+  const handleCancelExistingOffer = async () => {
+    if (!existingOfferId) return;
+
+    try {
+      await hiringApi.cancelOffer(existingOfferId);
+      setShowExistingOfferModal(false);
+      setExistingOfferId(null);
+
+      toast({
+        title: "Sucesso",
+        description: "Oferta existente cancelada com sucesso!",
+      });
+
+      setShowOfferModal(true); 
+    } catch (error: any) {
+      console.error("Error cancelling existing offer:", error);
+
+      toast({
+        title: "Erro",
+        description:
+          error.response?.data?.message || "Erro ao cancelar oferta existente",
+        variant: "destructive",
+      });
+    }
+  };
+
+  
+  const handleAcceptOfferById = useCallback(async (offerId: number) => {
+    
+    
+    if (!offerId || offerId <= 0 || isNaN(offerId)) {
+      console.error('Invalid offerId:', offerId);
+      toast({
+        title: "Erro",
+        description: "ID da oferta inválido",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: "Processando...",
+        description: "Aceitando oferta...",
+      });
+
+      const response = await hiringApi.acceptOffer(offerId);
+
+      if (response.success) {
+        toast({
+          title: "Sucesso",
+          description: "Oferta aceita com sucesso!",
+        });
+
+        
+        if (selectedRoom && response.data?.offer && response.data?.contract && user) {
+          
+          
+          if (isConnected) {
+            
+            setTimeout(() => {
+              sendOfferAcceptanceMessage(
+                selectedRoom.room_id,
+                response.data.offer,
+                response.data.contract,
+                user.id,
+                user.name,
+                user.avatar_url
+              );
+            }, 100);
+          }
+        } 
+
+        
+        if (selectedRoom) {
+          await Promise.all([
+            loadMessages(selectedRoom.room_id),
+            loadOffers(selectedRoom.room_id),
+            loadContracts(selectedRoom.room_id)
+          ]);
+        }
+      } else {
+        throw new Error(response.message || "Erro ao aceitar oferta");
+      }
+
+      
+    } catch (error: any) {
+      console.error("Error accepting offer:", error);
+      
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          "Erro ao aceitar oferta";
+      
+      toast({
+        title: "Erro",
+        description: errorMessage,
+        variant: "destructive",
+      });
+
+      
+      if (selectedRoom) {
+        await Promise.all([
+          loadMessages(selectedRoom.room_id),
+          loadOffers(selectedRoom.room_id),
+          loadContracts(selectedRoom.room_id)
+        ]);
+      }
+    }
+  }, [selectedRoom, offers, user?.role, toast, hiringApi, loadMessages, loadOffers, loadContracts, sendOfferAcceptanceMessage, user]);
+
+  const handleRejectOffer = useCallback(async (offerId: number) => {
+    
+    if (!offerId || offerId === undefined || offerId === null || offerId <= 0 || isNaN(offerId)) {
+      console.error('Invalid offerId:', offerId);
+      toast({
+        title: "Erro",
+        description: "ID da oferta inválido",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      
+      if (!offerId || offerId <= 0 || isNaN(offerId)) {
+        console.error('Final validation failed for offer ID:', offerId);
+        throw new Error(`Invalid offer ID: ${offerId}`);
+      }
+
+
+      toast({
+        title: "Processando...",
+        description: "Rejeitando oferta...",
+      });
+
+      await hiringApi.rejectOffer(offerId);
+
+      toast({
+        title: "Sucesso",
+        description: "Oferta rejeitada com sucesso!",
+      });
+
+      
+    } catch (error: any) {
+      console.error("Error rejecting offer:", error);
+      toast({
+        title: "Erro",
+        description: error.response?.data?.message || "Erro ao rejeitar oferta",
+        variant: "destructive",
+      });
+
+      
+      if (selectedRoom) {
+        loadMessages(selectedRoom.room_id);
+        loadOffers(selectedRoom.room_id);
+        loadContracts(selectedRoom.room_id);
+      }
+    }
+  }, [selectedRoom, offers, user?.role, toast, hiringApi, loadMessages, loadOffers, loadContracts]);
+
+  const handleCancelOffer = useCallback(async (offerId: number) => {
+    
+    if (!offerId || offerId === undefined || offerId === null || offerId <= 0 || isNaN(offerId)) {
+      console.error('Invalid offerId:', offerId);
+      toast({
+        title: "Erro",
+        description: "ID da oferta inválido",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      
+      if (!offerId || offerId <= 0 || isNaN(offerId)) {
+        console.error('Final validation failed for offer ID:', offerId);
+        throw new Error(`Invalid offer ID: ${offerId}`);
+      }
+
+      await hiringApi.cancelOffer(offerId);
+      toast({
+        title: "Sucesso",
+        description: "Oferta cancelada com sucesso!",
+      });
+      
+    } catch (error: any) {
+      console.error("Error cancelling offer:", error);
+      toast({
+        title: "Erro",
+        description: error.response?.data?.message || "Erro ao cancelar oferta",
+        variant: "destructive",
+      });
+    }
+  }, [toast, hiringApi]);
+
+  
+  const handleEndContract = (contractId: number) => {
+    const contractToEnd = contracts.find((c) => c.id === contractId);
+    if (contractToEnd) {
+      setContractToFinalize(contractToEnd);
+      setShowCampaignFinalizationModal(true);
+    }
+  };
+
+  
+  const handleCampaignFinalized = () => {
+    if (contractToFinalize) {
+      setContractToReview(contractToFinalize);
+      setShowReviewModal(true);
+      setContractToFinalize(null);
+    }
+  };
+
+  
+  const handleTerminateContract = (contractId: number) => {
+    const contractToTerminate = contracts.find((c) => c.id === contractId);
+    if (contractToTerminate) {
+      setContractToTerminate(contractToTerminate);
+      setShowTerminateModal(true);
+    }
+  };
+
+  
+  const handleTerminationConfirmed = async () => {
+    if (!contractToTerminate) return;
+
+    try {
+      const response = await hiringApi.terminateContract(
+        contractToTerminate.id,
+        terminationMessage.trim() || undefined
+      );
+
+      if (response.success) {
+        toast({
+          title: "Sucesso",
+          description: "Contrato terminado com sucesso",
+        });
+        setShowTerminateModal(false);
+        setContractToTerminate(null);
+        setTerminationMessage("");
+        
+        
+        if (selectedRoom) {
+          loadMessages(selectedRoom.room_id);
+          loadContracts(selectedRoom.room_id);
+        }
+      } else {
+        throw new Error(response.message || "Erro ao terminar contrato");
+      }
+    } catch (error: any) {
+      console.error("Error terminating contract:", error);
+      toast({
+        title: "Erro",
+        description: error.response?.data?.message || "Erro ao terminar contrato",
+        variant: "destructive",
+      });
+    }
+  };
+
+
+
+
+
+  
+  const handleReviewSubmitted = () => {
+    setShowReviewModal(false);
+    setContractToReview(null);
+
+    
+    if (contractToReview) {
+      setContracts((prev) =>
+        prev.map((contract) =>
+          contract.id === contractToReview.id
+            ? {
+              ...contract,
+              workflow_status: 'payment_available',
+              review: {
+                id: Date.now(), 
+                rating: 5,
+                comment: "Review submitted",
+                created_at: new Date().toISOString(),
+              },
+            }
+            : contract
+        )
+      );
+    }
+  };
+
+  const handleReviewModalClose = () => {
+    setShowReviewModal(false);
+    setContractToReview(null);
+  };
+
+  
+  const createDownloadLink = (
+    url: string,
+    fileName: string,
+    mimeType: string
+  ): HTMLAnchorElement => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.style.display = "none";
+    link.setAttribute("download", fileName);
+    link.setAttribute("type", mimeType);
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
+    
+    link.setAttribute("data-downloadurl", `${mimeType}:${fileName}:${url}`);
+    return link;
+  };
+
+  
+  const triggerDownload = (link: HTMLAnchorElement, blobUrl?: string): void => {
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    
+    if (blobUrl) {
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+      }, 1000);
+    }
+  };
+
+  
+  const downloadImageToLocal = async (
+    imageUrl: string,
+    fileName: string
+  ): Promise<void> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        
+        const downloadUrl = imageUrl.replace("/storage/", "/api/download/");
+
+        
+        try {
+          
+          const link = document.createElement("a");
+          link.href = downloadUrl;
+          link.download = fileName;
+          link.style.display = "none";
+          link.setAttribute("download", fileName);
+          link.setAttribute("type", getMimeType(fileName));
+          link.setAttribute("target", "_blank");
+          link.setAttribute("rel", "noopener noreferrer");
+
+          
+          const url = new URL(downloadUrl);
+          url.searchParams.set("download", Date.now().toString());
+          url.searchParams.set("filename", fileName);
+          url.searchParams.set("disposition", "attachment");
+          link.href = url.toString();
+
+          
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          resolve();
+          return;
+        } catch (directError) {
+          console.warn(
+            "Direct link failed, trying fetch with proxy:",
+            directError
+          );
+        }
+
+        
+        try {
+          const response = await fetch(downloadUrl, {
+            method: "GET",
+            mode: "cors",
+            credentials: "include",
+            headers: {
+              Accept: "image*;q=0.8",
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const blob = await response.blob();
+          const blobUrl = window.URL.createObjectURL(blob);
+
+          
+          const link = document.createElement("a");
+          link.href = blobUrl;
+          link.download = fileName;
+          link.style.display = "none";
+          link.setAttribute("download", fileName);
+          link.setAttribute("type", getMimeType(fileName));
+
+          
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          
+          setTimeout(() => {
+            window.URL.revokeObjectURL(blobUrl);
+          }, 1000);
+
+          resolve();
+          return;
+        } catch (fetchError) {
+          console.warn(
+            "Proxy fetch failed, trying XMLHttpRequest:",
+            fetchError
+          );
+        }
+
+        
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", downloadUrl, true);
+          xhr.responseType = "blob";
+          xhr.withCredentials = true;
+
+          xhr.onload = function () {
+            if (xhr.status === 200) {
+              const blob = xhr.response;
+              const blobUrl = window.URL.createObjectURL(blob);
+
+              
+              const link = document.createElement("a");
+              link.href = blobUrl;
+              link.download = fileName;
+              link.style.display = "none";
+              link.setAttribute("download", fileName);
+              link.setAttribute("type", getMimeType(fileName));
+
+              
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+
+              
+              setTimeout(() => {
+                window.URL.revokeObjectURL(blobUrl);
+              }, 1000);
+
+              resolve();
+            } else {
+              throw new Error(`XHR failed with status: ${xhr.status}`);
+            }
+          };
+
+          xhr.onerror = function () {
+            throw new Error("XHR request failed");
+          };
+
+          xhr.send();
+          return;
+        } catch (xhrError) {
+          console.warn("Proxy XHR failed, using manual download:", xhrError);
+        }
+
+        
+        console.warn(
+          "All proxy methods failed, opening in new tab for manual download"
+        );
+        try {
+          const newWindow = window.open(
+            downloadUrl,
+            "_blank",
+            "noopener,noreferrer"
+          );
+          if (newWindow) {
+            setTimeout(() => {
+              alert(
+                `Image "${fileName}" opened in new tab. Please right-click and select "Save image as..." to download it.`
+              );
+            }, 100);
+            resolve();
+          } else {
+            reject(new Error("Popup blocked by browser"));
+          }
+        } catch (openError) {
+          reject(openError);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  
+  const downloadFileToLocal = async (message: Message): Promise<void> => {
+    const fileName = message.file_name || "download";
+    const fileSize = message.file_size ? parseInt(message.file_size) : 0;
+
+    
+    const downloadUrl = message.file_url.replace("/storage/", "/api/download/");
+
+    
+    try {
+      const response = await fetch(downloadUrl, {
+        method: "GET",
+        mode: "cors",
+        credentials: "include",
+        headers: {
+          Accept: "*g, '');
+            return (
+              <div key={index} className="flex items-center gap-3 pt-2">
+                <div className="w-2 h-2 bg-gradient-to-r from-pink-500 to-purple-600 rounded-full flex-shrink-0"></div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                  {headerText}
+                </h3>
+              </div>
+            );
+          }
+          
+          
+          if (line.startsWith('•')) {
+            return (
+              <div key={index} className="flex items-start gap-3 pl-4">
+                <div className="w-1.5 h-1.5 bg-pink-500 rounded-full mt-2 flex-shrink-0"></div>
+                <p className="text-sm text-slate-900 dark:text-white leading-relaxed">
+                  {line.replace('• ', '')}
+                </p>
+              </div>
+            );
+          }
+          
+          
+          if (line.includes('**')) {
+            const parts = line.split('**');
+            return (
+              <p key={index} className="text-sm text-slate-900 dark:text-white leading-relaxed">
+                {parts.map((part, partIndex) => 
+                  partIndex % 2 === 1 ? (
+                    <strong key={partIndex} className="font-semibold text-slate-900 dark:text-slate-100">
+                      {part}
+                    </strong>
+                  ) : (
+                    part
+                  )
+                )}
+              </p>
+            );
+          }
+          
+          
+          return (
+            <p key={index} className="text-sm text-slate-900 dark:text-white leading-relaxed">
+              {line}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderMessageContent = (message: Message) => {
+    
+    if (message.message_type === "file") {
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="w-10 h-10 bg-pink-100 dark:bg-pink-900/20 rounded-lg flex items-center justify-center">
+                <File className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 dark:t truncate">
+                  {message.file_name}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  {message.formatted_file_size ||
+                    (message.file_size
+                      ? formatFileSize(parseInt(message.file_size))
+                      : "Unknown size")}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 capitalize">
+                  {getFileExtension(message.file_name || "")} file
+                </div>
+              </div>
+            </div>
+            <FileDropdown message={message} />
+          </div>
+          {message.message && message.message !== message.file_name && (
+            <p className={message.is_sender ? "text-sm text-white" : "text-sm text-slate-900 dark:text-white"}>
+              {message.message}
+            </p>
+          )}
+        </div>
+      );
+    } else if (message.message_type === "image") {
+      const handleImageClick = () => {
+        setImageViewer({
+          isOpen: true,
+          imageUrl: message.file_url || "",
+          imageName: message.file_name || "Image",
+          imageSize: message.file_size
+            ? formatFileSize(parseInt(message.file_size))
+            : undefined,
+        });
+    };
+
+    return (
+        <div className="space-y-3">
+          {message.file_url && (
+            <div className="relative group">
+              <img
+                src={message.file_url}
+                alt={message.file_name || "Image"}
+                className="max-w-full max-h-80 rounded-xl object-cover cursor-pointer"
+                loading="lazy"
+                decoding="async"
+                onClick={handleImageClick}
+              />
+              <div className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleImageClick();
+                  }}
+                  className="p-2 rounded-lg bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-colors"
+                  title="View Full Size"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    downloadImageToLocal(
+                      message.file_url || "",
+                      message.file_name || "image"
+                    );
+                  }}
+                  className="p-2 rounded-lg bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-colors"
+                  title="Download"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+          {message.message && (
+            <p className={message.is_sender ? "text-sm text-white" : "text-sm text-slate-900 dark:text-white"}>
+              {message.message}
+            </p>
+          )}
+        </div>
+      );
+    } else if (message.message_type === "offer" && message.offer_data) {
+      
+      
+      if (isLoadingOffers || !offersReady) {
+        return (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-3">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                {isLoadingOffers ? 'Carregando detalhes da oferta...' : 'Aguardando dados da oferta...'}
+              </p>
+            </div>
+          </div>
+        );
+      }
+      
+      
+      let actualOfferId: number | null = null;
+      
+      
+      if (message.offer_data.offer_id && typeof message.offer_data.offer_id === 'number' && message.offer_data.offer_id > 0) {
+        actualOfferId = message.offer_data.offer_id;
+      }
+      
+      
+      if (!actualOfferId && offers.length > 0) {
+        
+        
+        const matchingOffer = offers.find(offer => {
+          
+          const budgetMatch = offer.budget === message.offer_data.budget || 
+                             offer.budget === `R$ ${message.offer_data.budget},00` ||
+                             offer.budget === message.offer_data.formatted_budget;
+          
+          
+          const daysMatch = offer.estimated_days === message.offer_data.estimated_days;
+          
+          
+          const titleMatch = !message.offer_data.title || offer.title === message.offer_data.title;
+          
+          
+          const statusMatch = !message.offer_data.status || offer.status === message.offer_data.status;
+          
+          const isMatch = budgetMatch && daysMatch && titleMatch && statusMatch;
+          
+          return isMatch;
+        });
+        
+        if (matchingOffer) {
+          actualOfferId = matchingOffer.id;
+        } 
+      }
+      
+      
+      if (!actualOfferId || actualOfferId <= 0) {
+        console.error('Could not determine valid offer ID for message:', {
+          message_id: message.id,
+          offer_data: message.offer_data,
+          actualOfferId,
+          offers_count: offers.length
+        });
+        
+        
+        if (selectedRoom && offers.length === 0) {
+          loadOffers(selectedRoom.room_id);
+        }
+        
+        return (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-3">
+            <p className="text-sm text-red-700 dark:text-red-300">
+              Erro: Não foi possível identificar a oferta
+            </p>
+            <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+              Recarregue a página ou entre em contato com o suporte
+            </p>
+            <div className="mt-2 p-2 bg-red-100 dark:bg-red-900/30 rounded text-xs">
+              <p><strong>Debug Info:</strong></p>
+              <p>Message ID: {message.id}</p>
+              <p>Offer ID from message: {message.offer_data.offer_id}</p>
+              <p>Available offers: {offers.length}</p>
+              <p>Selected room: {selectedRoom?.room_id}</p>
+            </div>
+          </div>
+        );
+      }
+
+      
+      const chatOffer: ChatOffer = {
+        id: actualOfferId!, 
+        title: message.offer_data.title || "Oferta de Projeto",
+        description:
+          message.offer_data.description || "Oferta enviada via chat",
+        budget:
+          message.offer_data.formatted_budget ||
+          `R$ ${message.offer_data.budget || 0},00`,
+        estimated_days: message.offer_data.estimated_days || 1,
+        status: message.offer_data.status || "pending",
+        expires_at: message.offer_data.expires_at || new Date().toISOString(),
+        days_until_expiry: message.offer_data.days_until_expiry || 0,
+        is_expiring_soon: (message.offer_data.days_until_expiry || 0) <= 1,
+        created_at: message.created_at,
+        sender: {
+          id: message.offer_data.sender?.id || 0,
+          name: message.offer_data.sender?.name || "Usuário",
+          avatar_url: message.offer_data.sender?.avatar_url || null,
+        },
+        can_be_accepted: false, 
+        can_be_rejected: false, 
+        can_be_cancelled:
+          message.offer_data.status === "pending" && user?.role === "brand",
+        contract_id: message.offer_data.contract_id,
+        contract_status: message.offer_data.contract_status,
+        can_be_completed: message.offer_data.can_be_completed,
+      };
+
+      
+      if (!chatOffer.id || chatOffer.id <= 0) {
+        console.error('ChatOffer created with invalid ID:', chatOffer);
+        return (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-3">
+            <p className="text-sm text-red-700 dark:text-red-300">
+              Erro: ID da oferta inválido
+            </p>
+          </div>
+        );
+      }
+
+      
+      if (!chatOffer.id || chatOffer.id <= 0 || isNaN(chatOffer.id)) {
+        console.error('ChatOffer created with invalid ID:', chatOffer);
+        return (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-3">
+            <p className="text-sm text-red-700 dark:text-red-300">
+              Erro: ID da oferta inválido
+            </p>
+            <div className="mt-2 p-2 bg-red-100 dark:bg-red-900/30 rounded text-xs">
+              <p><strong>Debug Info:</strong></p>
+              <p>ChatOffer ID: {chatOffer.id}</p>
+              <p>Actual Offer ID: {actualOfferId}</p>
+              <p>Message Offer ID: {message.offer_data.offer_id}</p>
+            </div>
+          </div>
+        );
+      }
+    return (
+          <ChatOfferMessage
+            offer={chatOffer}
+            isSender={message.is_sender}
+            onAccept={handleAcceptOfferById}
+            onReject={handleRejectOffer}
+            onCancel={handleCancelOffer}
+            onEndContract={handleEndContract}
+            onTerminateContract={handleTerminateContract}
+            isCreator={false} 
+          />
+        );
+    }
+
+    
+    if (message.message_type === "contract_completion") {
+      return (
+        <ContractCompletionMessage
+          message={message}
+          onReview={async () => {
+            try {
+              
+              if (selectedRoom) {
+                const response = await hiringApi.getContractsForChatRoom(selectedRoom.room_id);
+                const freshContracts = response.data;
+                
+                
+                const contractToReview = freshContracts.find((c: any) => 
+                  c.status === "completed" && 
+                  (c.workflow_status === "waiting_review" || c.can_review === true)
+                );
+                
+                if (contractToReview) {
+                  setContractToReview(contractToReview);
+                  setShowReviewModal(true);
+                } else {
+                  const fallbackContract = {
+                    id: 34, 
+                    title: "Projeto de Campanha",
+                    status: "completed",
+                    workflow_status: "waiting_review",
+                    can_review: true,
+                    creator: {
+                      id: 36,
+                      name: "Creator",
+                    },
+                    other_user: {
+                      id: 38,
+                      name: "Brand",
+                    }
+                  };
+                  
+                  setContractToReview(fallbackContract);
+                  setShowReviewModal(true);
+                }
+              }
+            } catch (error) {
+              console.error('❌ Error loading contracts:', error);
+              toast({
+                title: "Erro",
+                description: "Erro ao carregar contratos",
+                variant: "destructive",
+              });
+            }
+          }}
+          isCreator={false} 
+          contractData={message.offer_data}
+        />
+      );
+    }
+
+    
+    if (message.message_type === "system") {
+      
+      const isReviewMessage =
+        (message.message?.includes("review") ||
+        message.message?.includes("avaliação")) &&
+        !message.message?.includes("finalizou o contrato");
+
+      
+      const isGuideMessage = message.message?.includes("Parabéns") || 
+                           message.message?.includes("parceria iniciada") ||
+                           message.message?.includes("Detalhes da Campanha");
+      
+
+
+      
+      const isContractCompletionMessage = message.message?.includes("O contrato foi finalizado com sucesso") ||
+                                        message.message?.includes("Vocês podem avaliar um ao outro") ||
+                                        message.message?.includes("Contrato finalizado com sucesso") ||
+                                        message.message?.includes("finalizado com sucesso") ||
+                                        message.message?.includes("aguardando avaliação");
+      
+      
+      const canReviewContract = contracts.some(
+        (contract) =>
+          contract.status === "completed" && 
+          contract.workflow_status === "waiting_review" &&
+          contract.can_review === true
+      );
+
+      
+      if (isContractCompletionMessage && canReviewContract) {
+        return (
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-700 rounded-2xl p-6 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-lg">🎉</span>
+              </div>
+              <div className="flex-1">
+                <div className="text-sm text-green-900 dark:text-green-100 leading-relaxed mb-4">
+                  {message.message}
+                </div>
+                <div className="flex justify-center">
+                  <Button
+                    onClick={() => {
+                      
+                      let contractToReview = contracts.find(
+                        (c) =>
+                          c.status === "completed" &&
+                          c.workflow_status === "waiting_review"
+                      );
+
+                      
+                      if (!contractToReview) {
+                        contractToReview = contracts.find(
+                          (c) => c.status === "completed"
+                        );
+                      }
+
+                      if (contractToReview) {
+                        
+                        if (contractToReview.can_review === false) {
+                          toast({
+                            title: "Avaliação já realizada",
+                            description: "Você já avaliou este contrato",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+
+                        setContractToReview(contractToReview);
+                        setShowReviewModal(true);
+                      } else {
+                        toast({
+                          title: "Erro",
+                          description:
+                            "Nenhum contrato encontrado para avaliação",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                  >
+                    <Star className="w-5 h-5 mr-2" />
+                    ⭐ Avaliar Trabalho
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      
+      if (isContractCompletionMessage && hasCompletedContract && user?.role === "brand") {
+        return (
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-700 rounded-2xl p-6 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-lg">🎉</span>
+              </div>
+              <div className="flex-1">
+                <div className="text-sm text-green-900 dark:text-green-100 leading-relaxed mb-4">
+                  {message.message}
+                </div>
+                <div className="flex justify-center gap-3">
+                  <Button
+                    onClick={() => setShowOfferModal(true)}
+                    className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                  >
+                    <Briefcase className="w-5 h-5 mr-2" />
+                    Enviar Nova Oferta
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+
+      if (isGuideMessage) {
+        return (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl p-6 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-lg">📋</span>
+              </div>
+              <div className="flex-1">
+                {formatGuideMessage(message.message || '')}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div
+          className={cn(
+            "border rounded-xl p-3 shadow-sm",
+            isReviewMessage
+              ? "bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border-yellow-300 dark:border-yellow-600"
+              : "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-orange-900/20 border-blue-200 dark:border-blue-800"
+          )}
+        >
+          <div className="flex items-start gap-2">
+            <div
+              className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
+                isReviewMessage ? "bg-yellow-500" : "bg-blue-500"
+              )}
+            >
+              <span className="text-white text-xs">
+                {isReviewMessage ? "⭐" : "ℹ️"}
+              </span>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium leading-relaxed">
+                {message.message}
+              </p>
+              {isReviewMessage && (
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      
+                      let contractToReview = contracts.find(
+                        (c) =>
+                          c.status === "completed" &&
+                          c.workflow_status === "waiting_review"
+                      );
+
+                      
+                      if (!contractToReview) {
+                        contractToReview = contracts.find(
+                          (c) => c.status === "completed"
+                        );
+                      }
+
+                      
+                      if (!contractToReview && contracts.length > 0) {
+                        contractToReview = contracts[0];
+                      }
+
+                      if (contractToReview) {
+                        
+                        if (contractToReview.can_review === false) {
+                          toast({
+                            title: "Avaliação já realizada",
+                            description: "Você já avaliou este contrato",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+
+                        setContractToReview(contractToReview);
+                        setShowReviewModal(true);
+                      } else {
+                        console.error("No contract found for review!");
+                        toast({
+                          title: "Erro",
+                          description:
+                            "Nenhum contrato encontrado para avaliação",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm px-4 py-2"
+                  >
+                    <Star className="w-4 h-4 mr-2" />
+                    Avaliar Agora
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+  return (
+      <p className={message.is_sender ? "text-sm text-white" : "text-sm text-slate-900 dark:text-white"}>
+        {message.message}
+      </p>
+    );
+  };
+
+  
+  const getFileIcon = (fileName: string, messageType: string) => {
+    const extension = getFileExtension(fileName);
+
+    if (messageType === "image")
+      return <ImageIcon className="w-6 h-6 text-white" />;
+
+    switch (extension) {
+      case "pdf":
+        return <FileText className="w-6 h-6 text-white" />;
+      case "doc":
+      case "docx":
+        return <FileText className="w-6 h-6 text-white" />;
+      case "mp4":
+      case "avi":
+      case "mov":
+      case "wmv":
+        return <FileVideo className="w-6 h-6 text-white" />;
+      case "mp3":
+      case "wav":
+      case "flac":
+        return <FileAudio className="w-6 h-6 text-white" />;
+      case "zip":
+      case "rar":
+      case "7z":
+        return <Archive className="w-6 h-6 text-white" />;
+      case "js":
+      case "ts":
+      case "jsx":
+      case "tsx":
+      case "html":
+      case "css":
+      case "json":
+        return <Code className="w-6 h-6 text-white" />;
+      default:
+        return <File className="w-6 h-6 text-white" />;
+    }
+  };
+
+  
+  const getFileColor = (fileName: string, messageType: string) => {
+    const extension = getFileExtension(fileName);
+
+    if (messageType === "image") return "from-emerald-500 to-teal-600";
+
+    switch (extension) {
+      case "pdf":
+        return "from-red-500 to-pink-600";
+      case "doc":
+      case "docx":
+        return "from-blue-500 to-indigo-600";
+      case "mp4":
+      case "avi":
+      case "mov":
+      case "wmv":
+        return "from-purple-500 to-violet-600";
+      case "mp3":
+      case "wav":
+      case "flac":
+        return "from-orange-500 to-amber-600";
+      case "zip":
+      case "rar":
+      case "7z":
+        return "from-yellow-500 to-orange-600";
+      case "js":
+      case "ts":
+      case "jsx":
+      case "tsx":
+      case "html":
+      case "css":
+      case "json":
+        return "from-indigo-500 to-purple-600";
+      default:
+        return "from-slate-500 to-gray-600";
+    }
+  };
+
+  return (
+    <div className="flex h-full bg-background overflow-hidden">
+  {}
+
+  <div className="flex flex-1 overflow-hidden">
+    {}
+    <div
+      data-sidebar
+      className={cn(
+        
+        "flex flex-col w-full max-w-[100vw] md:max-w-sm border-r bg-background transition-all duration-300 ease-in-out",
+        "md:relative md:translate-x-0 md:shadow-none",
+        sidebarOpen
+          ? "fixed inset-0 z-40 translate-x-0 shadow-2xl"
+          : "fixed inset-0 z-40 -translate-x-full md:relative md:translate-x-0"
+      )}
+    >
+      {}
+      <div className="flex items-center justify-between gap-2 px-4 sm:px-6 py-4 border-b bg-background">
+        <div className="flex flex-col">
+          <span className="font-bold text-xl tracking-tight text-slate-900 dark:text-white">
+            Conversas
+          </span>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {chatRooms.length} conversas
+            </span>
+            {connectionError && (
+              <div className="flex items-center gap-1 text-red-500">
+                <WifiOff className="w-3 h-3" />
+                <span className="text-xs">Offline</span>
+              </div>
+            )}
+          </div>
+        </div>
+        {connectionError && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={reconnect}
+            className="p-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        )}
+        <button
+          className="md:hidden p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close conversations"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {}
+      <div className="p-3 sm:p-4 pb-3">
+        <div className="relative">
+          <Input
+            placeholder="Buscar conversas..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:border-pink-300 dark:focus:border-pink-600 transition-all duration-200"
+          />
+          <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+        </div>
+      </div>
+
+      {}
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-pink-500 scrollbar-track-transparent hover:scrollbar-thumb-pink-600">
+        {}
+        <div className="p-2 w-full md:w-[383px] md:mx-0 mx-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-pink-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : filteredRooms.length === 0 ? (
+            <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+              <div className="text-4xl mb-2">💬</div>
+              <p className="text-sm">Nenhuma conversa encontrada</p>
+            </div>
+          ) : (
+            filteredRooms.map((room) => (
+              <div
+                key={room.id}
+                onClick={() => {
+                  setSelectedRoom(room);
+                  
+                  if (window.innerWidth < 768) setSidebarOpen(false);
+                }}
+                className={cn(
+                  "flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 mb-2",
+                  selectedRoom?.id === room.id
+                    ? "bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800"
+                    : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                )}
+              >
+                <Avatar className="w-12 h-12">
+                  <AvatarImage
+                    src={`${import.meta.env.VITE_BACKEND_URL ||
+                      "https://nexacreators.com.br"
+                      }${room.other_user.avatar}`}
+                  />
+                  <AvatarFallback className="bg-pink-100 dark:bg-pink-900 text-pink-600 dark:text-pink-400">
+                    {room.other_user.name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-slate-900 dark:text-white truncate">
+                      {room.other_user.name}
+                    </h3>
+                    {room.last_message_at && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        {formatMessageTime(room.last_message_at)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 truncate">
+                    {room.campaign_title}
+                  </p>
+                  {room.last_message && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                      {room.last_message.is_sender ? "Você: " : ""}
+                      {room.last_message.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+
+    {}
+    <div className="flex-1 flex flex-col">
+      {selectedRoom ? (
+        <>
+          {}
+          <div className="flex items-center justify-between p-3 sm:p-4 border-b bg-background">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {}
+              <button
+                className="md:hidden p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 flex-shrink-0"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Back to conversations"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-slate-700 dark:text-slate-300"
+                >
+                  <path d="m15 18-6-6 6-6"/>
+                </svg>
+              </button>
+
+              <Avatar className="w-10 h-10 flex-shrink-0">
+                <AvatarImage
+                  src={`${import.meta.env.VITE_BACKEND_URL ||
+                    "https://nexacreators.com.br"
+                    }${selectedRoom.other_user.avatar}`}
+                />
+                <AvatarFallback className="bg-pink-100 dark:bg-pink-900 text-pink-600 dark:text-pink-400">
+                  {selectedRoom.other_user.name.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold text-slate-900 dark:text-white truncate">
+                  {selectedRoom.other_user.name}
+                </h2>
+                <div className="flex items-center gap-2">
+                  {isConnected ? (
+                    <div className="flex items-center gap-1 text-green-500">
+                      <Wifi className="w-4 h-4" />
+                      <span className="text-xs">Online</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 text-red-500">
+                      <WifiOff className="w-4 h-4" />
+                      <span className="text-xs">Offline</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {}
+              {activeContract && (
+                <Button
+                  onClick={() => setShowTimelineSidebar(true)}
+                  variant="outline"
+                  className="bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border-blue-200 text-blue-700 hover:text-blue-800"
+                >
+                  <Clock className="w-4 h-4 mr-2" />
+                  Linha do Tempo
+                </Button>
+              )}
+
+              {contracts.some(contract => 
+                contract.status === "completed" && !contract.has_brand_review
+              ) && (
+                <Button
+                  onClick={() => {
+                    const contractToReview = contracts.find(contract => 
+                      contract.status === "completed" && !contract.has_brand_review
+                    );
+                    if (contractToReview) {
+                      setContractToReview(contractToReview);
+                      setShowReviewModal(true);
+                    } else {
+                      toast({
+                        title: "Erro",
+                        description: "Nenhum contrato disponível para avaliação",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  <Star className="w-4 h-4 mr-2" />
+                  Avaliar Criador
+                </Button>
+              )}
+
+              {canSendOffer && (
+                <>
+                  {offers.some(offer => offer.status === 'pending') ? (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => {
+                          const pendingOffer = offers.find(offer => offer.status === 'pending');
+                          if (pendingOffer) {
+                            handleExistingOffer(pendingOffer.id);
+                          }
+                        }}
+                        className="bg-orange-600 hover:bg-orange-700 text-white"
+                      >
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Oferta Pendente
+                      </Button>
+                      <Button
+                        onClick={() => setShowOfferModal(true)}
+                        variant="outline"
+                        className="border-orange-600 text-orange-600 hover:bg-orange-50"
+                      >
+                        <Briefcase className="w-4 h-4 mr-2" />
+                        Nova Oferta
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => setShowOfferModal(true)}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      <Briefcase className="w-4 h-4 mr-2" />
+                      Enviar Oferta
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {canReview && (
+                <Button
+                  onClick={() => {
+                    let contractToReview = contracts.find(
+                      (c) =>
+                        c.status === "completed" &&
+                        c.workflow_status === "waiting_review"
+                    );
+
+                    if (!contractToReview) {
+                      contractToReview = contracts.find(
+                        (c) => c.status === "completed"
+                      );
+                    }
+
+                    if (!contractToReview && contracts.length > 0) {
+                      contractToReview = contracts[0];
+                    }
+
+                    if (contractToReview) {
+                      if (contractToReview.can_review === false) {
+                        toast({
+                          title: "Avaliação já realizada",
+                          description: "Você já avaliou este contrato",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+
+                      setContractToReview(contractToReview);
+                      setShowReviewModal(true);
+                    } else {
+                      toast({
+                        title: "Erro",
+                        description:
+                          "Nenhum contrato encontrado para avaliação",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  <Star className="w-4 h-4 mr-2" />⚡ Avaliar Trabalho
+                </Button>
+              )}
+
+              {hasCompletedContract && user?.role === "brand" && selectedRoom && (
+                <Button
+                  onClick={() => setShowOfferModal(true)}
+                  className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  Enviar Nova Oferta
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {}
+          {canReview && (
+            <div className="mx-4 mt-4 p-3 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border border-yellow-300 dark:border-yellow-600 rounded-lg shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-600" />
+                  <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                    ⚡ Você tem contratos aguardando avaliação!
+                  </span>
+                </div>
+                <Button
+                  onClick={() => {
+                    const contractToReview = contracts.find(
+                      (c) =>
+                        c.status === "completed" &&
+                        c.workflow_status === "waiting_review"
+                    );
+                    if (contractToReview) {
+                      setContractToReview(contractToReview);
+                      setShowReviewModal(true);
+                    }
+                  }}
+                  size="sm"
+                  className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                >
+                  Avaliar Agora
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {}
+          {user?.role === "brand" && selectedRoom && offers.some(offer => offer.status === 'pending') && (
+            <div className="mx-4 mt-4 p-3 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border border-orange-300 dark:border-orange-600 rounded-lg shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-orange-600" />
+                  <span className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                    📋 Você tem uma oferta pendente para este criador
+                  </span>
+                </div>
+                <Button
+                  onClick={() => {
+                    const pendingOffer = offers.find(offer => offer.status === 'pending');
+                    if (pendingOffer) {
+                      handleExistingOffer(pendingOffer.id);
+                    }
+                  }}
+                  size="sm"
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  Ver Oferta
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {}
+          {hasCompletedContract && user?.role === "brand" && selectedRoom && !activeContract && (
+            <div className="mx-4 mt-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-300 dark:border-green-600 rounded-lg shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-medium text-green-800 dark:text-green-200">
+                    🎉 Contrato finalizado! Você pode enviar uma nova oferta para este criador
+                  </span>
+                </div>
+                <Button
+                  onClick={() => setShowOfferModal(true)}
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  Enviar Nova Oferta
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 scrollbar-hide">
+            <div className="space-y-4">
+              {messages.map((message) => {
+                return (
+                  <div
+                    key={message.id}
+                    className={cn(
+                      "flex gap-3",
+                      message.message_type === "system"
+                        ? "justify-center"
+                        : message.is_sender
+                          ? "justify-end"
+                          : "justify-start"
+                    )}
+                  >
+                    {!message.is_sender &&
+                      message.message_type !== "system" && (
+                        <Avatar className="w-8 h-8">
+                          <AvatarImage
+                            src={`${import.meta.env.VITE_BACKEND_URL ||
+                              "https://nexacreators.com.br"
+                              }${selectedRoom.other_user.avatar}`}
+                          />
+                          <AvatarFallback className="bg-pink-100 dark:bg-pink-900 text-pink-600 dark:text-pink-400 text-xs">
+                            {selectedRoom.other_user.name
+                              .charAt(0)
+                              .toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                    <div
+                        className={cn(
+                          message.message_type === "system"
+                            ? "max-w-[92vw] sm:max-w-2xl px-4 py-2 rounded-xl"
+                            : "max-w-[85vw] sm:max-w-sm lg:max-w-lg xl:max-w-xl px-4 py-2 rounded-2xl",
+                          message.message_type === "system"
+                            ? ""
+                            : message.is_sender
+                            ? "bg-pink-500 text-white"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white",
+                          "break-words"
+                        )}
+                    >
+                      {renderMessageContent(message)}
+                      {message.message_type !== "system" && (
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs opacity-70">
+                            {formatMessageTime(message.created_at)}
+                          </span>
+                          {message.is_sender && (
+                            <div className="flex items-center gap-1">
+                              {message.is_read ? (
+                                <div className="flex items-center gap-0.5">
+                                  <Check className="w-3 h-3" />
+                                  <Check className="w-3 h-3 -ml-1" />
+                                </div>
+                              ) : (
+                                <Check className="w-3 h-3" />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          {}
+          <form
+            className={`flex items-end gap-3 px-3 sm:px-4 py-3 border-t bg-background transition-colors ${
+              dragActive ? 'bg-pink-50 dark:bg-pink-900/10' : ''
+            }`}
+            onSubmit={handleSendMessage}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            style={{ paddingBottom: viewportOffset ? viewportOffset + 8 : undefined }}
+          >
+            {}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 sm:p-3 rounded-xl hover:bg-gradient-to-r hover:from-pink-50 hover:to-purple-50 dark:hover:from-pink-900/20 dark:hover:to-purple-900/20 transition-all duration-300 hover:shadow-md group flex-shrink-0"
+              aria-label="Attach file"
+            >
+              <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500 group-hover:text-pink-600 dark:group-hover:text-pink-400 transition-colors duration-300" />
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileSelect}
+              className="hidden"
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar,.mp3,.mp4,.wav,.flac,.avi,.mov,.wmv,.js,.ts,.jsx,.tsx,.html,.css,.json"
+            />
+
+            {}
+            {selectedFile && (
+              <div className="group relative overflow-hidden bg-gradient-to-r from-pink-50 to-purple-50 dark:from-pink-900/20 dark:to-purple-900/20 rounded-2xl border border-pink-200 dark:border-pink-800 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] animate-in slide-in-from-bottom-2 duration-300">
+                <div className="absolute inset-0 bg-gradient-to-r from-pink-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="relative flex items-center gap-2 sm:gap-4 p-2 sm:p-3 md:p-4">
+                  {filePreview ? (
+                    <div className="relative">
+                      <img
+                        src={filePreview}
+                        alt="Preview"
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover border-2 border-pink-200 dark:border-pink-700 shadow-md group-hover:scale-110 transition-transform duration-300 flex-shrink-0"
+                      />
+                      <div className="absolute -top-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center">
+                        <ImageIcon className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-white" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className={`w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br ${getFileColor(
+                        selectedFile.name,
+                        selectedFile.type.startsWith("image/")
+                          ? "image"
+                          : "file"
+                      )} rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300 flex-shrink-0`}
+                    >
+                      {getFileIcon(
+                        selectedFile.name,
+                        selectedFile.type.startsWith("image/")
+                          ? "image"
+                          : "file"
+                      )}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-pink-600 dark:group-hover:text-pink-400 transition-colors duration-300">
+                      {selectedFile.name}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 sm:gap-2">
+                      <span>{formatFileSize(selectedFile.size)}</span>
+                      <span className="w-1 h-1 bg-slate-300 dark:bg-slate-600 rounded-full" />
+                      <span className="capitalize hidden sm:inline">
+                        {getFileExtension(selectedFile.name)} file
+                      </span>
+                      <span className="capitalize sm:hidden">
+                        {getFileExtension(selectedFile.name)}
+                      </span>
+                    </div>
+                    {isUploading ? (
+                      <div className="mt-2">
+                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                          <div 
+                            className="bg-gradient-to-r from-pink-500 to-purple-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>Enviando... {Math.round(uploadProgress)}%</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Ready to send</span>
+                      </div>
+                    )}
+                  </div>
+                  {!isUploading && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setFilePreview(null);
+                      }}
+                      className="p-1.5 sm:p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-all duration-300 hover:shadow-md group-hover:scale-110 flex-shrink-0"
+                    >
+                      <X className="w-3 h-3 sm:w-4 sm:h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1 relative min-w-0" style={{ paddingBottom: viewportOffset ? viewportOffset + 8 : undefined }}>
+              <Textarea
+                ref={inputRef}
+                rows={1}
+                className="w-full bg-background border-slate-200 dark:border-slate-700 focus:border-pink-300 dark:focus:border-pink-600 transition-all duration-200 resize-none rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base leading-6 max-h-52"
+                placeholder="Digite uma mensagem..."
+                value={input}
+                onChange={handleInputChange}
+                autoComplete="off"
+                aria-label="Digite uma mensagem"
+                onFocus={() => {
+                  setTimeout(() => {
+                    inputRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                  }, 50);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage(e as any);
+                  }
+                }}
+                onKeyUp={handleKeyUp}
+                onBlur={handleInputBlur}
+              />
+
+              {}
+              {typingUsers.size > 0 && (
+                <div className="absolute -top-8 left-0 right-0 flex items-center gap-2 px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex space-x-1">
+                      <div
+                        className="w-2 h-2 bg-pink-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "0ms" }}
+                      ></div>
+                      <div
+                        className="w-2 h-2 bg-pink-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "150ms" }}
+                      ></div>
+                      <div
+                        className="w-2 h-2 bg-pink-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "300ms" }}
+                      ></div>
+                    </div>
+                    <span className="text-sm text-slate-900 dark:text-white">
+                      {Array.from(typingUsers).length === 1
+                        ? `${Array.from(typingUsers)[0]} está digitando...`
+                        : `${Array.from(typingUsers).join(", ")} estão digitando...`}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={(!input.trim() && !selectedFile) || !selectedRoom || isUploading}
+              className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed px-3 sm:px-4 py-2 sm:py-3 h-9 sm:h-12 rounded-2xl shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-105 group flex-shrink-0"
+            >
+              {isUploading ? (
+                <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform duration-300" />
+              )}
+              <span className="hidden sm:inline font-semibold ml-1 sm:ml-2">
+                {isUploading ? "Enviando..." : "Enviar"}
+              </span>
+            </Button>
+          </form>
+        </>
+      ) : (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-slate-500 dark:text-slate-400">
+            <div className="text-6xl mb-6">💬</div>
+            <p className="text-lg font-medium mb-2">Selecione uma conversa</p>
+            <p className="text-sm">
+              Escolha uma conversa da barra lateral para começar a conversar
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+
+  {}
+  {sidebarOpen && (
+    <div
+      className="md:hidden fixed inset-0 bg-black/30 backdrop-blur-sm z-30"
+      onClick={() => setSidebarOpen(false)}
+    />
+  )}
+
+  {}
+  {imageViewer.isOpen &&
+    createPortal(
+      <div
+        ref={imageViewerRef}
+        className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm flex items-center justify-center"
+        onClick={() => {
+          setImageViewer({
+            isOpen: false,
+            imageUrl: "",
+            imageName: "",
+            imageSize: "",
+          });
+          setImageZoom(1);
+          setImageRotation(0);
+        }}
+      >
+        {}
+        <div
+          className="relative max-w-[90vw] max-h-[90vh] flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <img
+            src={imageViewer.imageUrl}
+            alt={imageViewer.imageName}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            style={{
+              transform: `scale(${imageZoom}) rotate(${imageRotation}deg)`,
+              transition: "transform 0.3s ease-in-out",
+            }}
+            draggable={false}
+          />
+        </div>
+
+        {}
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-xl p-2 border border-white/20">
+          <button
+            onClick={() =>
+              setImageZoom((prev) => Math.max(prev - 0.25, 0.25))
+            }
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setImageZoom((prev) => Math.min(prev + 0.25, 3))}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setImageRotation((prev) => (prev + 90) % 360)}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white"
+            title="Rotate"
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => {
+              setImageZoom(1);
+              setImageRotation(0);
+            }}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white"
+            title="Reset"
+          >
+            <Minimize2 className="w-5 h-5" />
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                await downloadImageToLocal(
+                  imageViewer.imageUrl,
+                  imageViewer.imageName
+                );
+              } catch (error) {
+                toast({
+                  title: "Erro",
+                  description: "Falha ao baixar imagem",
+                  variant: "destructive",
+                });
+              }
+            }}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white"
+            title="Download"
+          >
+            <Download className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => {
+              setImageViewer({
+                isOpen: false,
+                imageUrl: "",
+                imageName: "",
+                imageSize: "",
+              });
+              setImageZoom(1);
+              setImageRotation(0);
+            }}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white"
+            title="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {}
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+          <div className="text-white text-center">
+            <div className="font-medium">{imageViewer.imageName}</div>
+            {imageViewer.imageSize && (
+              <div className="text-sm text-white/70">{imageViewer.imageSize}</div>
+            )}
+            <div className="text-sm text-white/70">
+              Zoom: {Math.round(imageZoom * 100)}% | Rotation: {imageRotation}°
+            </div>
+            <div className="text-xs text-white/50 mt-1">
+              Press + / - to zoom, R to rotate, 0 to reset, D to download, ESC to close
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+  {}
+  {showOfferModal && selectedRoom && (
+    <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <CreateOffer
+        creatorId={selectedRoom.other_user.id}
+        creatorName={selectedRoom.other_user.name}
+        chatRoomId={selectedRoom.room_id}
+        onOfferCreated={handleOfferCreated}
+        onCancel={handleOfferCancel}
+        onExistingOffer={handleExistingOffer}
+        onReloadMessages={() =>
+          selectedRoom && loadMessages(selectedRoom.room_id)
+        }
+      />
+    </div>
+  )}
+
+  {}
+  {showExistingOfferModal && (
+    <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-background rounded-lg p-6 max-w-md w-full">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 text-orange-500" />
+          Oferta Existente
+        </h3>
+
+        {}
+        {existingOfferId && (
+          <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg">
+            <p className="text-sm text-orange-800 dark:text-orange-200 mb-2">
+              <strong>Oferta Atual:</strong>
+            </p>
+            {(() => {
+              const existingOffer = offers.find(offer => offer.id === existingOfferId);
+              if (existingOffer) {
+                return (
+                  <div className="text-sm">
+                    <p><strong>Valor:</strong> {existingOffer.budget}</p>
+                    <p><strong>Prazo:</strong> {existingOffer.estimated_days} dias</p>
+                    <p><strong>Status:</strong> {existingOffer.status === 'pending' ? 'Pendente' : existingOffer.status}</p>
+                    <p><strong>Expira em:</strong> {existingOffer.days_until_expiry} dias</p>
+                  </div>
+                );
+              }
+              return <p className="text-sm text-gray-600">Detalhes da oferta não disponíveis</p>;
+            })()}
+          </div>
+        )}
+
+        <p className="text-muted-foreground mb-6">
+          Você já tem uma oferta pendente para este criador. Deseja cancelar
+          a oferta existente e criar uma nova?
+        </p>
+
+        <div className="flex gap-3 justify-end">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowExistingOfferModal(false);
+              setExistingOfferId(null);
+            }}
+          >
+            Manter Oferta
+          </Button>
+          <Button
+            onClick={handleCancelExistingOffer}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            Cancelar e Criar Nova
+          </Button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {}
+  {showReviewModal && contractToReview && (
+    <div className="w-full h-screen flex justify-center items-center bg-black/60 backdrop-blur-sm">
+      <ReviewModal
+        isOpen={showReviewModal}
+        onClose={handleReviewModalClose}
+        contract={contractToReview}
+        onReviewSubmitted={handleReviewSubmitted}
+      />
+    </div>
+  )}
+
+  {showCampaignFinalizationModal && contractToFinalize && (
+    <CampaignFinalizationModal
+      isOpen={showCampaignFinalizationModal}
+      onClose={() => {
+        setShowCampaignFinalizationModal(false);
+        setContractToFinalize(null);
+      }}
+      contract={contractToFinalize}
+      onCampaignFinalized={handleCampaignFinalized}
+    />
+  )}
+
+  {showTerminateModal && contractToTerminate && (
+    <Dialog open={showTerminateModal} onOpenChange={setShowTerminateModal}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Terminar Contrato</DialogTitle>
+          <DialogDescription>
+            Tem certeza que deseja terminar este contrato? Uma mensagem será enviada ao criador.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Mensagem de Terminação (opcional)</Label>
+            <Textarea
+              value={terminationMessage}
+              onChange={(e) => setTerminationMessage(e.target.value)}
+              placeholder="Explique o motivo da terminação..."
+              className="mt-1"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowTerminateModal(false);
+              setContractToTerminate(null);
+              setTerminationMessage("");
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button onClick={handleTerminationConfirmed} variant="destructive">
+            Confirmar Terminação
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )}
+
+  {showTimelineSidebar && activeContract && (
+    <CampaignTimelineSidebar
+      contractId={activeContract.id}
+      isOpen={showTimelineSidebar}
+      onClose={() => setShowTimelineSidebar(false)}
+    />
+  )}
+</div>
+  )
+}

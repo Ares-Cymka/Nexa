@@ -1,0 +1,25 @@
+import axios from 'axios';
+
+const BackendURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+const UserAPI = axios.create({
+    baseURL: BackendURL,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+});
+
+const setAuthToken = (token: string) => {
+    UserAPI.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+};
+
+
+export const getCreatorProfile = async (creatorId: string, token: string) => {
+    try {
+        setAuthToken(token);
+        const response = await UserAPI.get(`/api/creators/${creatorId}/profile`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+}; 
